@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "56757055461",
+    "project_id": "ul-bussines",
+    "storage_bucket": "ul-bussines.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:56757055461:android:0be6a188eb397f4980090c",
+        "android_client_info": {
+          "package_name": "com.seunome.ulbusiness.ul_business"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAp5XYUpiD5Bp2wVl7q5my_TEtAzsynecA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,127 +1,184 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class CrmKanbanScreen extends StatelessWidget {
+import 'widgets/interaction_bottom_sheet.dart';
+
+class CrmKanbanScreen extends StatefulWidget {
   const CrmKanbanScreen({Key? key}) : super(key: key);
+
+  @override
+  State<CrmKanbanScreen> createState() => _CrmKanbanScreenState();
+}
+
+class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
+  String _filtroTexto = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Pipeline de Vendas',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            Text(
-              'Workspace do Agendista',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      // ListView horizontal para as colunas do Kanban
-      body: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.all(16.0),
+      body: Column(
         children: [
-          _buildKanbanColumn(
-            context,
-            title: 'Prospecção',
-            count: 2,
-            color: Colors.blueGrey,
-            cards: [
-              _buildDealCard(
-                context,
-                empresa: 'TechCorp Indústria',
-                tema: 'Mapeamento Comportamental',
-                valor: 'R\$ 8.500',
-                data: 'A definir',
-                urgencia: Colors.orangeAccent,
+          // Barra de Pesquisa Superior
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) =>
+                  setState(() => _filtroTexto = value.toLowerCase().trim()),
+              decoration: InputDecoration(
+                hintText: 'Filtrar por empresa ou agendista...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                suffixIcon: _filtroTexto.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.clear,
+                          size: 18,
+                          color: Colors.white54,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _filtroTexto = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surface,
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 0,
+                  horizontal: 16,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
               ),
-              _buildDealCard(
-                context,
-                empresa: 'Logística Alfa',
-                tema: 'Gestão de Tempo',
-                valor: 'R\$ 5.000',
-                data: 'A definir',
-                urgencia: Colors.blueGrey,
-              ),
-            ],
+            ),
           ),
-          _buildKanbanColumn(
-            context,
-            title: 'Proposta Enviada',
-            count: 1,
-            color: Colors.amber,
-            cards: [
-              _buildDealCard(
-                context,
-                empresa: 'Instituto Vida & Consultores Associados',
-                tema: 'O Profissional da Atualidade',
-                valor: 'R\$ 12.000',
-                data: '12 de Nov',
-                urgencia: Colors.redAccent, // Alta prioridade de fechamento
-              ),
-            ],
-          ),
-          _buildKanbanColumn(
-            context,
-            title: 'Contrato Fechado',
-            count: 1,
-            color: Colors.green,
-            cards: [
-              _buildDealCard(
-                context,
-                empresa: 'Grupo Varejo Sul',
-                tema: 'Liderança de Alta Performance',
-                valor: 'R\$ 15.000',
-                data: '20 de Out',
-                urgencia: Colors.greenAccent,
-              ),
-            ],
+
+          // Kanban Reativo com Filtro
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('interacoes')
+                  .orderBy('data_registro', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data?.docs ?? [];
+
+                // Agrupamento com filtro dinâmico
+                final Map<String, List<Map<String, dynamic>>> colunas = {
+                  'Em Prospecção': [],
+                  'Aguardando': [],
+                  'Agendada': [],
+                  'Recusada': [],
+                };
+
+                for (var doc in docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final empresa = (data['empresa_nome'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final agendista = (data['agendista'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final status = data['status'] ?? 'Em Prospecção';
+
+                  // Aplica o filtro de texto
+                  final bateuComFiltro =
+                      _filtroTexto.isEmpty ||
+                      empresa.contains(_filtroTexto) ||
+                      agendista.contains(_filtroTexto);
+
+                  if (bateuComFiltro && colunas.containsKey(status)) {
+                    colunas[status]!.add(data);
+                  }
+                }
+
+                return ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  children: [
+                    _buildKanbanColumn(
+                      context,
+                      title: 'Em Prospecção',
+                      color: Colors.blueGrey,
+                      items: colunas['Em Prospecção']!,
+                    ),
+                    _buildKanbanColumn(
+                      context,
+                      title: 'Aguardando',
+                      color: Colors.amberAccent,
+                      items: colunas['Aguardando']!,
+                    ),
+                    _buildKanbanColumn(
+                      context,
+                      title: 'Agendada',
+                      color: Colors.greenAccent,
+                      items: colunas['Agendada']!,
+                    ),
+                    _buildKanbanColumn(
+                      context,
+                      title: 'Recusada',
+                      color: Colors.redAccent,
+                      items: colunas['Recusada']!,
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: const InteractionBottomSheet(
+                empresaNome: 'Nova Prospecção',
+              ),
+            ),
+          );
+        },
         backgroundColor: Theme.of(context).colorScheme.primary,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  // Construtor da Coluna do Kanban
   Widget _buildKanbanColumn(
     BuildContext context, {
     required String title,
-    required int count,
     required Color color,
-    required List<Widget> cards,
+    required List<Map<String, dynamic>> items,
   }) {
     return Container(
-      width: 300, // Largura fixa para cada coluna no mobile/web
-      margin: const EdgeInsets.only(right: 16.0),
+      width: 290,
+      margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cabeçalho da Coluna
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -130,120 +187,101 @@ class CrmKanbanScreen extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white10,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    count.toString(),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    items.length.toString(),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
           const Divider(height: 1, color: Colors.white10),
-          // Lista de Cartões (Negócios)
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(8.0),
-              children: cards,
-            ),
+            child: items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Nenhum resultado',
+                      style: TextStyle(color: Colors.white24, fontSize: 12),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(8.0),
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8.0),
+                        color: Theme.of(context).colorScheme.surface,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item['empresa_nome'] ?? 'Empresa Sem Nome',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Agendista: ${item['agendista'] ?? 'Não informado'}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white54,
+                                ),
+                              ),
+                              if (item['notas'] != null &&
+                                  (item['notas'] as String).isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  item['notas'],
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
-      ),
-    );
-  }
-
-  // Construtor do Cartão de Negociação (Deal)
-  Widget _buildDealCard(
-    BuildContext context, {
-    required String empresa,
-    required String tema,
-    required String valor,
-    required String data,
-    required Color urgencia,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      color: Theme.of(context).colorScheme.surface,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    empresa,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Icon(Icons.circle, color: urgencia, size: 10),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tema: $tema',
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    valor,
-                    style: TextStyle(
-                      fontSize: 12, 
-                      fontWeight: FontWeight.bold, 
-                      color: Theme.of(context).colorScheme.primary
-                    ),
-                  ),
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_today, size: 12, color: Colors.white54),
-                    const SizedBox(width: 4),
-                    Text(
-                      data,
-                      style: const TextStyle(fontSize: 11, color: Colors.white54),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
