@@ -14,6 +14,13 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
   String _filtroTexto = '';
   final TextEditingController _searchController = TextEditingController();
 
+  final List<String> _todasColunas = [
+    'Em Prospecção',
+    'Aguardando',
+    'Agendada',
+    'Recusada',
+  ];
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -25,7 +32,6 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
     return Scaffold(
       body: Column(
         children: [
-          // Barra de Pesquisa Superior
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
@@ -63,7 +69,6 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
             ),
           ),
 
-          // Kanban Reativo com Filtro
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -77,7 +82,6 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
 
                 final docs = snapshot.data?.docs ?? [];
 
-                // Agrupamento com filtro dinâmico
                 final Map<String, List<Map<String, dynamic>>> colunas = {
                   'Em Prospecção': [],
                   'Aguardando': [],
@@ -87,6 +91,8 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
 
                 for (var doc in docs) {
                   final data = doc.data() as Map<String, dynamic>;
+                  data['doc_id'] = doc.id;
+
                   final empresa = (data['empresa_nome'] ?? '')
                       .toString()
                       .toLowerCase();
@@ -95,7 +101,6 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
                       .toLowerCase();
                   final status = data['status'] ?? 'Em Prospecção';
 
-                  // Aplica o filtro de texto
                   final bateuComFiltro =
                       _filtroTexto.isEmpty ||
                       empresa.contains(_filtroTexto) ||
@@ -169,119 +174,309 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
     required Color color,
     required List<Map<String, dynamic>> items,
   }) {
-    return Container(
-      width: 290,
-      margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) => details.data['status'] != title,
+      onAcceptWithDetails: (details) async {
+        final docId = details.data['doc_id'];
+        if (docId != null) {
+          if (title == 'Agendada') {
+            _abrirInteracao({...details.data, 'status': title});
+            return;
+          }
+          await FirebaseFirestore.instance
+              .collection('interacoes')
+              .doc(docId)
+              .update({'status': title});
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+
+        return Container(
+          width: 290,
+          margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
+          decoration: BoxDecoration(
+            color: isHovered
+                ? color.withOpacity(0.15)
+                : Theme.of(context).colorScheme.surface.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isHovered ? color : Colors.white10,
+              width: isHovered ? 2.0 : 1.0,
+            ),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        items.length.toString(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white10,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    items.length.toString(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+              ),
+              const Divider(height: 1, color: Colors.white10),
+
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Arraste um cartão aqui',
+                          style: TextStyle(color: Colors.white24, fontSize: 12),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(8.0),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Draggable<Map<String, dynamic>>(
+                            data: item,
+                            feedback: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                width: 270,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blueAccent),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black54,
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  item['empresa_nome'] ?? '',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            childWhenDragging: Opacity(
+                              opacity: 0.3,
+                              child: _buildCardContent(context, item, title),
+                            ),
+                            child: _buildCardContent(context, item, title),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _abrirInteracao(Map<String, dynamic> interacao) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      constraints: const BoxConstraints(maxWidth: 640),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: InteractionBottomSheet(
+          empresaNome: '${interacao['empresa_nome'] ?? 'Cliente'}',
+          interacaoInicial: interacao,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardContent(
+    BuildContext context,
+    Map<String, dynamic> item,
+    String currentColumnTitle,
+  ) {
+    final docId = item['doc_id'];
+    final valor = item['valor'] ?? '0';
+    final timestamp = item['data_evento'] as Timestamp?;
+    final dataEventoStr = timestamp != null
+        ? '${timestamp.toDate().day}/${timestamp.toDate().month} às ${timestamp.toDate().hour.toString().padLeft(2, '0')}:${timestamp.toDate().minute.toString().padLeft(2, '0')}'
+        : null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8.0),
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: InkWell(
+        onTap: () => _abrirInteracao(item),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item['empresa_nome'] ?? 'Empresa Sem Nome',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Opções',
+                    icon: const Icon(
+                      Icons.more_vert,
+                      size: 18,
+                      color: Colors.white54,
+                    ),
+                    onSelected: (novoStatus) async {
+                      if (docId != null) {
+                        if (novoStatus == 'Agendada') {
+                          _abrirInteracao({...item, 'status': novoStatus});
+                          return;
+                        }
+                        await FirebaseFirestore.instance
+                            .collection('interacoes')
+                            .doc(docId)
+                            .update({'status': novoStatus});
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      ..._todasColunas
+                          .where((col) => col != currentColumnTitle)
+                          .map((colunaDestino) {
+                            return PopupMenuItem<String>(
+                              value: colunaDestino,
+                              child: Text(
+                                'Mover para $colunaDestino',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          })
+                          .toList(),
+                      const PopupMenuDivider(),
+                      PopupMenuItem<String>(
+                        onTap: () async {
+                          if (docId != null) {
+                            await FirebaseFirestore.instance
+                                .collection('interacoes')
+                                .doc(docId)
+                                .delete();
+                          }
+                        },
+                        child: const Text(
+                          'Excluir',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                item['agendista'] ?? 'Agendista',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (dataEventoStr != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.event,
+                      size: 12,
+                      color: Colors.greenAccent,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$dataEventoStr (${item['duracao_minutos'] ?? 60} min)',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.greenAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (valor != '0' && valor.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'R\$ $valor',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white70,
                   ),
                 ),
               ],
-            ),
+              if ('${item['notas'] ?? ''}'.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${item['notas']}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ],
           ),
-          const Divider(height: 1, color: Colors.white10),
-          Expanded(
-            child: items.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Nenhum resultado',
-                      style: TextStyle(color: Colors.white24, fontSize: 12),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(8.0),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8.0),
-                        color: Theme.of(context).colorScheme.surface,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item['empresa_nome'] ?? 'Empresa Sem Nome',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Agendista: ${item['agendista'] ?? 'Não informado'}',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                              if (item['notas'] != null &&
-                                  (item['notas'] as String).isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  item['notas'],
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white70,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }

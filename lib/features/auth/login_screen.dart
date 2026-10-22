@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,22 +30,122 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _fazerLogin() async {
+  // Login via E-mail e Senha
+  Future<void> _fazerLoginEmail() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Preencha o e-mail e a senha.')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
+
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+        email: email,
+        password: password,
       );
-      // O AuthGuard detectará o login e fará o roteamento automaticamente
     } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro: ${e.message}'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      String msg = 'Falha no login.';
+      if (e.code == 'user-not-found') msg = 'Usuário não encontrado.';
+      if (e.code == 'wrong-password') msg = 'Senha incorreta.';
+      if (e.code == 'invalid-credential') msg = 'E-mail ou senha incorretos.';
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Login via Google
+  Future<void> _loginComGoogle() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      final UserCredential userCredential;
+      final String accessToken;
+      if (kIsWeb) {
+        final provider = GoogleAuthProvider();
+        for (final scope in _calendarScopes) {
+          provider.addScope(scope);
+        }
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+        final credential = userCredential.credential;
+        if (credential is! OAuthCredential || credential.accessToken == null) {
+          throw StateError('Google nao retornou um token de acesso.');
+        }
+        accessToken = credential.accessToken!;
+      } else {
+        final googleSignIn = GoogleSignIn.instance;
+        await (_googleInitialization ??= googleSignIn.initialize());
+        if (!googleSignIn.supportsAuthenticate()) {
+          throw UnsupportedError(
+            'Login com Google indisponivel nesta plataforma.',
+          );
+        }
+        final googleUser = await googleSignIn.authenticate(
+          scopeHint: _calendarScopes,
+        );
+        final authorization = await googleUser.authorizationClient
+            .authorizeScopes(_calendarScopes);
+        accessToken = authorization.accessToken;
+        final googleAuth = googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: accessToken,
+          idToken: googleAuth.idToken,
+        );
+        userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+      }
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        final userDocRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid);
+        final docSnap = await userDocRef.get();
+
+        if (!docSnap.exists) {
+          await userDocRef.set({
+            'uid': user.uid,
+            'nome': user.displayName ?? 'Sem Nome',
+            'email': user.email,
+            'fotoUrl': user.photoURL,
+            'role': 'pendente',
+            'googleAccessToken': accessToken,
+            'criadoEm': FieldValue.serverTimestamp(),
+          });
+        } else {
+          await userDocRef.update({
+            'googleAccessToken': accessToken,
+          });
+        }
+      }
+    } catch (e) {
+      if (e is GoogleSignInException &&
+          e.code == GoogleSignInExceptionCode.canceled) {
+        return;
+      }
+      if (e is FirebaseAuthException && e.code == 'popup-closed-by-user') {
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao entrar com Google: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -53,14 +154,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Container(
-            constraints: const BoxConstraints(
-              maxWidth: 400,
-            ), // Mantém o login elegante no Web/Desktop
+            constraints: const BoxConstraints(maxWidth: 400),
             padding: const EdgeInsets.all(32.0),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
@@ -83,22 +181,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   size: 48,
                   color: Colors.blueAccent,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 const Text(
                   'UL Business',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 const Text(
-                  'Acesso Restrito',
+                  'Acesso ao Sistema Comercial',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54),
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
 
+                // E-mail
                 TextField(
                   controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
                     labelText: 'E-mail corporativo',
                     prefixIcon: const Icon(Icons.email_outlined),
@@ -106,10 +206,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
 
+                // Senha
                 TextField(
                   controller: _passwordController,
                   obscureText: true,
@@ -123,10 +223,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
+                // Botão Entrar
                 SizedBox(
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _fazerLogin,
+                    onPressed: _isLoading ? null : _fazerLoginEmail,
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -152,6 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
                 const Row(
                   children: [
@@ -168,8 +270,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // Botão Login Google
                 SizedBox(
-                  height: 50,
+                  height: 48,
                   child: OutlinedButton.icon(
                     onPressed: _isLoading ? null : _loginComGoogle,
                     style: OutlinedButton.styleFrom(
@@ -192,83 +295,42 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+
+                const SizedBox(height: 24),
+
+                // Atalho para Criar Conta
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Não tem uma conta? ',
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RegisterScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'Cadastre-se',
+                        style: TextStyle(
+                          color: Colors.blueAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  Future<void> _loginComGoogle() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-    try {
-      final UserCredential userCredential;
-      if (kIsWeb) {
-        final provider = GoogleAuthProvider();
-        for (final scope in _calendarScopes) {
-          provider.addScope(scope);
-        }
-        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
-      } else {
-        final googleSignIn = GoogleSignIn.instance;
-        await (_googleInitialization ??= googleSignIn.initialize());
-        if (!googleSignIn.supportsAuthenticate()) {
-          throw UnsupportedError(
-            'Login com Google indisponivel nesta plataforma.',
-          );
-        }
-        final googleUser = await googleSignIn.authenticate(
-          scopeHint: _calendarScopes,
-        );
-        await googleUser.authorizationClient.authorizeScopes(_calendarScopes);
-        final googleAuth = googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          idToken: googleAuth.idToken,
-        );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
-        );
-      }
-      final User? user = userCredential.user;
-
-      if (user != null) {
-        final userDocRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid);
-        final docSnap = await userDocRef.get();
-
-        // Se for o primeiro login, cria o perfil pendente
-        if (!docSnap.exists) {
-          await userDocRef.set({
-            'uid': user.uid,
-            'nome': user.displayName ?? 'Sem Nome',
-            'email': user.email,
-            'fotoUrl': user.photoURL,
-            'role': 'pendente', // Aguarda aprovação do Admin (Orador)
-            'criadoEm': FieldValue.serverTimestamp(),
-          });
-        }
-      }
-    } catch (e) {
-      if (e is GoogleSignInException &&
-          e.code == GoogleSignInExceptionCode.canceled) {
-        return;
-      }
-      if (e is FirebaseAuthException && e.code == 'popup-closed-by-user') {
-        return;
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Falha na autenticação do Google: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
   }
 }
