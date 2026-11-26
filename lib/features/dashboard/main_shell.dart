@@ -1,52 +1,85 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
+import '../../core/theme/theme_provider.dart';
 import 'dashboard_screen.dart';
 import '../crm/crm_kanban_screen.dart';
 import '../agenda/agenda_screen.dart';
 import '../timeline/time_tree_screen.dart';
 import 'user_management_screen.dart';
 
-class MainShell extends StatefulWidget {
-  const MainShell({Key? key}) : super(key: key);
+class MainShell extends ConsumerStatefulWidget {
+  const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = [
-    const DashboardScreen(),
-    const CrmKanbanScreen(),
-    const AgendaScreen(),
-    const TimeTreeScreen(),
+  final List<Widget> _pages = const [
+    DashboardScreen(),
+    CrmKanbanScreen(),
+    AgendaScreen(),
+    TimeTreeScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >= 800;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 800;
     final user = FirebaseAuth.instance.currentUser;
+    final tokens = context.tokens;
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            const Icon(
-              Icons.business_center,
-              color: Colors.blueAccent,
-              size: 24,
+            const ULBusinessLogo(
+              size: 34,
+              borderRadius: 9,
             ),
             const SizedBox(width: 12),
-            const Text(
+            Text(
               'UL Business',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                color: tokens.textPrimary,
+                letterSpacing: -0.3,
+              ),
             ),
           ],
         ),
         actions: [
+          Tooltip(
+            message: tokens.isDark ? 'Mudar para Light Mode' : 'Mudar para Dark Mode',
+            child: IconButton(
+              onPressed: () {
+                ref
+                    .read(themeModeProvider.notifier)
+                    .toggleLightDark(Theme.of(context).brightness);
+              },
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, anim) =>
+                    RotationTransition(turns: anim, child: child),
+                child: Icon(
+                  tokens.isDark
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined,
+                  key: ValueKey(tokens.isDark),
+                  color: tokens.textSecondary,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+
           // Stream para verificar se o usuário é Orador e exibir atalho de gestão de equipe
           StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance
@@ -59,9 +92,10 @@ class _MainShellState extends State<MainShell> {
 
               if (isOrador) {
                 return IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.group_add_outlined,
-                    color: Colors.amberAccent,
+                    color: tokens.textSecondary,
+                    size: 20,
                   ),
                   tooltip: 'Gestão da Equipe',
                   onPressed: () {
@@ -78,21 +112,24 @@ class _MainShellState extends State<MainShell> {
             },
           ),
 
+          const SizedBox(width: 4),
+
           // Menu de Perfil com renderização segura de avatar do Google
           PopupMenuButton<String>(
             offset: const Offset(0, 50),
+            tooltip: 'Conta',
             icon: ClipOval(
               child: SizedBox(
-                width: 36,
-                height: 36,
+                width: 34,
+                height: 34,
                 child: user?.photoURL != null && user!.photoURL!.isNotEmpty
                     ? Image.network(
                         user.photoURL!,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
-                            _buildInitialsAvatar(user),
+                            _buildInitialsAvatar(user, tokens),
                       )
-                    : _buildInitialsAvatar(user),
+                    : _buildInitialsAvatar(user, tokens),
               ),
             ),
             onSelected: (value) async {
@@ -108,31 +145,36 @@ class _MainShellState extends State<MainShell> {
                   children: [
                     Text(
                       user?.displayName ?? 'Usuário',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: tokens.textPrimary,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       user?.email ?? '',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white54,
+                        color: tokens.textSecondary,
                       ),
                     ),
-                    const Divider(color: Colors.white10),
+                    const SizedBox(height: 8),
+                    Divider(color: tokens.borderSubtle),
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout, size: 18, color: Colors.redAccent),
-                    SizedBox(width: 8),
+                    Icon(Icons.logout, size: 18, color: tokens.danger),
+                    const SizedBox(width: 8),
                     Text(
                       'Sair do Sistema',
-                      style: TextStyle(color: Colors.redAccent),
+                      style: TextStyle(
+                        color: tokens.danger,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -142,16 +184,16 @@ class _MainShellState extends State<MainShell> {
           const SizedBox(width: 16),
         ],
       ),
-      body: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-      bottomNavigationBar: isDesktop ? null : _buildBottomNavBar(),
+      body: isDesktop ? _buildDesktopLayout(tokens) : _buildMobileLayout(),
+      bottomNavigationBar: isDesktop ? null : _buildBottomNavBar(tokens),
     );
   }
 
-  Widget _buildInitialsAvatar(User? user) {
+  Widget _buildInitialsAvatar(User? user, AppThemeTokens tokens) {
     final name = user?.displayName ?? user?.email ?? 'U';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
     return Container(
-      color: Theme.of(context).colorScheme.primary,
+      color: tokens.primary,
       alignment: Alignment.center,
       child: Text(
         initial,
@@ -164,11 +206,10 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  Widget _buildDesktopLayout() {
+  Widget _buildDesktopLayout(AppThemeTokens tokens) {
     return Row(
       children: [
         NavigationRail(
-          backgroundColor: Theme.of(context).colorScheme.surface,
           selectedIndex: _selectedIndex,
           onDestinationSelected: (int index) =>
               setState(() => _selectedIndex = index),
@@ -176,30 +217,27 @@ class _MainShellState extends State<MainShell> {
           destinations: const [
             NavigationRailDestination(
               icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard, color: Colors.blueAccent),
+              selectedIcon: Icon(Icons.dashboard),
               label: Text('Dashboard'),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.view_kanban_outlined),
-              selectedIcon: Icon(Icons.view_kanban, color: Colors.blueAccent),
+              selectedIcon: Icon(Icons.view_kanban),
               label: Text('CRM'),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon: Icon(
-                Icons.calendar_month,
-                color: Colors.blueAccent,
-              ),
+              selectedIcon: Icon(Icons.calendar_month),
               label: Text('Agenda'),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.account_tree_outlined),
-              selectedIcon: Icon(Icons.account_tree, color: Colors.blueAccent),
+              selectedIcon: Icon(Icons.account_tree),
               label: Text('Árvore'),
             ),
           ],
         ),
-        const VerticalDivider(thickness: 1, width: 1, color: Colors.white10),
+        VerticalDivider(thickness: 1, width: 1, color: tokens.borderSubtle),
         Expanded(child: _pages[_selectedIndex]),
       ],
     );
@@ -207,34 +245,38 @@ class _MainShellState extends State<MainShell> {
 
   Widget _buildMobileLayout() => _pages[_selectedIndex];
 
-  Widget _buildBottomNavBar() {
-    return NavigationBar(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      selectedIndex: _selectedIndex,
-      onDestinationSelected: (int index) =>
-          setState(() => _selectedIndex = index),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.dashboard_outlined),
-          selectedIcon: Icon(Icons.dashboard),
-          label: 'Resumo',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.view_kanban_outlined),
-          selectedIcon: Icon(Icons.view_kanban),
-          label: 'Funil',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.calendar_month_outlined),
-          selectedIcon: Icon(Icons.calendar_month),
-          label: 'Agenda',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.account_tree_outlined),
-          selectedIcon: Icon(Icons.account_tree),
-          label: 'Árvore',
-        ),
-      ],
+  Widget _buildBottomNavBar(AppThemeTokens tokens) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: tokens.borderSubtle, width: 1)),
+      ),
+      child: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (int index) =>
+            setState(() => _selectedIndex = index),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Resumo',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.view_kanban_outlined),
+            selectedIcon: Icon(Icons.view_kanban),
+            label: 'Funil',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Agenda',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_tree_outlined),
+            selectedIcon: Icon(Icons.account_tree),
+            label: 'Árvore',
+          ),
+        ],
+      ),
     );
   }
 }

@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -153,183 +155,222 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            padding: const EdgeInsets.all(32.0),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+      body: Stack(
+        children: [
+          if (tokens.isDark)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 0.75,
+                    colors: [
+                      tokens.primary.withValues(alpha: 0.14),
+                      tokens.canvas,
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(
-                  Icons.business_center,
-                  size: 48,
-                  color: Colors.blueAccent,
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'UL Business',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Acesso ao Sistema Comercial',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
-                ),
-                const SizedBox(height: 28),
-
-                // E-mail
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'E-mail corporativo',
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Senha
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Senha',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Botão Entrar
-                SizedBox(
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _fazerLoginEmail,
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Entrar no Sistema',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                padding: const EdgeInsets.all(32.0),
+                decoration: BoxDecoration(
+                  color: tokens.surfaceElevated1,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: tokens.borderSubtle, width: 1),
+                  boxShadow: tokens.isDark
+                      ? [
+                          BoxShadow(
+                            color: tokens.primary.withValues(alpha: 0.08),
+                            blurRadius: 48,
+                            spreadRadius: 2,
                           ),
-                  ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: 24,
+                            offset: const Offset(0, 12),
+                          ),
+                        ]
+                      : [
+                          BoxShadow(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                 ),
-
-                const SizedBox(height: 16),
-                const Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: Divider(color: Colors.white10)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'ou',
-                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                    const Center(
+                      child: ULBusinessLogo(
+                        size: 92,
+                        borderRadius: 20,
                       ),
                     ),
-                    Expanded(child: Divider(color: Colors.white10)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Botão Login Google
-                SizedBox(
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _loginComGoogle,
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: const BorderSide(color: Colors.white24),
-                    ),
-                    icon: const Icon(
-                      Icons.g_mobiledata,
-                      size: 28,
-                      color: Colors.white,
-                    ),
-                    label: const Text(
-                      'Entrar com Google',
+                    const SizedBox(height: 18),
+                    Text(
+                      'UL Business',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                        letterSpacing: -0.4,
                       ),
                     ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Atalho para Criar Conta
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Não tem uma conta? ',
-                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Acesso ao Sistema Comercial',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: tokens.textSecondary,
+                        fontSize: 13,
+                      ),
                     ),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RegisterScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        'Cadastre-se',
-                        style: TextStyle(
-                          color: Colors.blueAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                    const SizedBox(height: 28),
+
+                    // E-mail
+                    TextField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'E-mail corporativo',
+                        prefixIcon: Icon(Icons.email_outlined, size: 20),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // Senha
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      onSubmitted: (_) => _isLoading ? null : _fazerLoginEmail(),
+                      decoration: const InputDecoration(
+                        labelText: 'Senha',
+                        prefixIcon: Icon(Icons.lock_outline, size: 20),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Botão Entrar
+                    SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _fazerLoginEmail,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Entrar no Sistema',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: tokens.borderSubtle)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'ou',
+                            style: TextStyle(
+                              color: tokens.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: tokens.borderSubtle)),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Botão Login Google
+                    SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: _isLoading ? null : _loginComGoogle,
+                        icon: Icon(
+                          Icons.g_mobiledata,
+                          size: 26,
+                          color: tokens.textPrimary,
+                        ),
+                        label: Text(
+                          'Entrar com Google',
+                          style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Atalho para Criar Conta
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Não tem uma conta? ',
+                          style: TextStyle(
+                            color: tokens.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const RegisterScreen(),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            'Cadastre-se',
+                            style: TextStyle(
+                              color: tokens.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

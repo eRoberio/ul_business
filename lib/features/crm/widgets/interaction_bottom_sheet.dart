@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-class InteractionBottomSheet extends StatefulWidget {
+import '../../../core/theme/app_colors.dart';
+import 'event_location.dart';
+import 'location_navigation_sheet.dart';
+import 'location_picker_screen.dart';
+
+typedef InteractionBottomSheet = CommercialAppointmentModal;
+
+class CommercialAppointmentModal extends StatefulWidget {
   final String empresaNome;
   final DateTime? dataInicial;
   final Map<String, dynamic>? interacaoInicial;
   final bool permitirVinculo;
 
-  const InteractionBottomSheet({
+  const CommercialAppointmentModal({
     super.key,
     required this.empresaNome,
     this.dataInicial,
@@ -17,10 +24,12 @@ class InteractionBottomSheet extends StatefulWidget {
   });
 
   @override
-  State<InteractionBottomSheet> createState() => _InteractionBottomSheetState();
+  State<CommercialAppointmentModal> createState() =>
+      _CommercialAppointmentModalState();
 }
 
-class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
+class _CommercialAppointmentModalState
+    extends State<CommercialAppointmentModal> {
   String _statusSelecionado = 'Em Prospecção';
   final TextEditingController _empresaController = TextEditingController();
   final TextEditingController _notasController = TextEditingController();
@@ -31,20 +40,13 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
   bool _isSaving = false;
   int _duracaoMinutos = 60;
   Map<String, dynamic>? _interacaoVinculada;
+  EventLocation? _localizacao;
 
-  final List<Map<String, dynamic>> _statusOptions = [
-    {'label': 'Em Prospecção', 'icon': Icons.search, 'color': Colors.blueGrey},
-    {
-      'label': 'Aguardando',
-      'icon': Icons.hourglass_empty,
-      'color': Colors.amberAccent,
-    },
-    {
-      'label': 'Agendada',
-      'icon': Icons.check_circle,
-      'color': Colors.greenAccent,
-    },
-    {'label': 'Recusada', 'icon': Icons.cancel, 'color': Colors.redAccent},
+  static const List<Map<String, dynamic>> _statusOptions = [
+    {'label': 'Em Prospecção', 'icon': Icons.search},
+    {'label': 'Aguardando', 'icon': Icons.hourglass_empty},
+    {'label': 'Agendada', 'icon': Icons.check_circle},
+    {'label': 'Recusada', 'icon': Icons.cancel},
   ];
 
   @override
@@ -72,6 +74,21 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
     _dataEvento = widget.dataInicial ?? data;
     _horarioEvento = data == null ? null : TimeOfDay.fromDateTime(data);
     _duracaoMinutos = (interacao['duracao_minutos'] as num?)?.toInt() ?? 60;
+    _localizacao = EventLocation.fromMap(interacao['localizacao']);
+  }
+
+  Future<void> _selecionarLocalizacao(String nomeAgendista) async {
+    final selecionada = await Navigator.of(context).push<EventLocation>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLocation: _localizacao,
+          capturedBy: nomeAgendista,
+        ),
+      ),
+    );
+    if (selecionada != null && mounted) {
+      setState(() => _localizacao = selecionada);
+    }
   }
 
   @override
@@ -82,7 +99,6 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
     super.dispose();
   }
 
-  // Seletor de Data e Hora
   Future<void> _selecionarDataHora() async {
     final now = DateTime.now();
     final pickedDate = await showDatePicker(
@@ -110,7 +126,6 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
     }
   }
 
-  // Validação da Regra do Sábado
   bool _validarRegraSabado() {
     if (_statusSelecionado == 'Agendada') {
       if (_dataEvento == null || _horarioEvento == null) {
@@ -124,34 +139,33 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
         return false;
       }
 
-      // Sábado = DateTime.saturday (6)
       if (_dataEvento!.weekday == DateTime.saturday) {
         final minutosSelecionados =
             _horarioEvento!.hour * 60 + _horarioEvento!.minute;
-        final limiteMinutos = 18 * 60 + 30; // 18:30 = 1110 minutos
+        final limiteMinutos = 18 * 60 + 30;
 
         if (minutosSelecionados < limiteMinutos) {
+          final tokens = context.tokens;
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              title: const Row(
+              title: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.amberAccent),
-                  SizedBox(width: 8),
-                  Text('Restrição de Sábado', style: TextStyle(fontSize: 16)),
+                  Icon(Icons.warning_amber_rounded, color: tokens.warning),
+                  const SizedBox(width: 8),
+                  const Text('Restrição de Sábado', style: TextStyle(fontSize: 16)),
                 ],
               ),
-              content: const Text(
+              content: Text(
                 'Aos sábados, os agendamentos são permitidos exclusivamente após as 18:30.\n\nPor favor, escolha um horário a partir das 18:30 ou altere o dia da palestra.',
-                style: TextStyle(fontSize: 13, color: Colors.white70),
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text(
+                  child: Text(
                     'Entendido',
-                    style: TextStyle(color: Colors.blueAccent),
+                    style: TextStyle(color: tokens.primary),
                   ),
                 ),
               ],
@@ -166,6 +180,7 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final currentUser = FirebaseAuth.instance.currentUser;
     final nomeAgendista =
         currentUser?.displayName ??
@@ -173,10 +188,11 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
         'Agendista';
 
     return Container(
-      padding: const EdgeInsets.only(top: 24, left: 24, right: 24, bottom: 32),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: tokens.surfaceElevated1,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: tokens.borderSubtle)),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -186,12 +202,16 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Apontamento Comercial',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textPrimary,
+                  ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54),
+                  icon: Icon(Icons.close, color: tokens.textSecondary),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -199,7 +219,7 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
             Text(
               'Registrado por: $nomeAgendista',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
+                color: tokens.primary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -253,6 +273,7 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                                   _horarioEvento = null;
                                   _duracaoMinutos = 60;
                                   _statusSelecionado = 'Agendada';
+                                  _localizacao = null;
                                 } else {
                                   final documento = documentos.firstWhere(
                                     (doc) => doc.id == id,
@@ -271,12 +292,9 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
 
             TextField(
               controller: _empresaController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Nome da Empresa / Cliente',
-                prefixIcon: const Icon(Icons.business),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.business),
               ),
             ),
             const SizedBox(height: 16),
@@ -284,22 +302,19 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
             TextField(
               controller: _valorController,
               keyboardType: TextInputType.number,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Valor Proposto (R\$)',
-                prefixIcon: const Icon(Icons.attach_money),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.attach_money),
               ),
             ),
             const SizedBox(height: 20),
 
-            const Text(
-              'Status da Negociação:',
+            Text(
+              'Status da Negociação',
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white70,
-                fontWeight: FontWeight.bold,
+                color: tokens.textSecondary,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
@@ -316,44 +331,48 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
               itemCount: _statusOptions.length,
               itemBuilder: (context, index) {
                 final option = _statusOptions[index];
-                final isSelected = _statusSelecionado == option['label'];
+                final label = option['label'] as String;
+                final icon = option['icon'] as IconData;
+                final color = tokens.statusColor(label);
+                final isSelected = _statusSelecionado == label;
 
-                return GestureDetector(
-                  onTap: () =>
-                      setState(() => _statusSelecionado = option['label']),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? option['color'].withOpacity(0.15)
-                          : Colors.white.withOpacity(0.02),
-                      border: Border.all(
-                        color: isSelected ? option['color'] : Colors.white10,
-                        width: isSelected ? 1.5 : 1.0,
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => setState(() => _statusSelecionado = label),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? tokens.badgeBackground(color)
+                            : tokens.surfaceElevated2,
+                        border: Border.all(
+                          color: isSelected ? color : tokens.borderSubtle,
+                          width: isSelected ? 1.5 : 1.0,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          option['icon'],
-                          size: 16,
-                          color: isSelected ? option['color'] : Colors.white54,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          option['label'],
-                          style: TextStyle(
-                            color: isSelected
-                                ? option['color']
-                                : Colors.white54,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            fontSize: 12,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 16,
+                            color: isSelected ? color : tokens.textSecondary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: isSelected ? color : tokens.textSecondary,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -361,26 +380,25 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Seleção de Data/Hora (Aparece em destaque se for "Agendada")
             if (_statusSelecionado == 'Agendada') ...[
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.greenAccent.withOpacity(0.05),
+                  color: tokens.badgeBackground(tokens.success),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.greenAccent.withOpacity(0.3),
+                    color: tokens.success.withValues(alpha: 0.35),
                   ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Data e Horário da Palestra (Obrigatório):',
+                    Text(
+                      'Data e Horário da Palestra (Obrigatório)',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.greenAccent,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.success,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -390,11 +408,12 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 10,
+                          vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white10,
+                          color: tokens.surfaceElevated2,
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: tokens.borderSubtle),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -405,16 +424,16 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                                   : '${_dataEvento!.day}/${_dataEvento!.month}/${_dataEvento!.year} - ${_horarioEvento?.format(context) ?? 'Selecionar horário'}',
                               style: TextStyle(
                                 color: _dataEvento == null
-                                    ? Colors.white54
-                                    : Colors.white,
+                                    ? tokens.textSecondary
+                                    : tokens.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            const Icon(
+                            Icon(
                               Icons.calendar_today,
                               size: 16,
-                              color: Colors.greenAccent,
+                              color: tokens.success,
                             ),
                           ],
                         ),
@@ -440,11 +459,131 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
             TextField(
               controller: _notasController,
               maxLines: 2,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Observações / Próximos Passos',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: tokens.surfaceElevated2,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _localizacao != null
+                      ? tokens.primary.withValues(alpha: 0.45)
+                      : tokens.borderSubtle,
                 ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        size: 18,
+                        color: _localizacao != null
+                            ? tokens.primary
+                            : tokens.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Localização do Evento / Empresa',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (_localizacao != null)
+                        IconButton(
+                          tooltip: 'Remover localização',
+                          icon: Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: tokens.textSecondary,
+                          ),
+                          onPressed: _isSaving
+                              ? null
+                              : () => setState(() => _localizacao = null),
+                        ),
+                    ],
+                  ),
+                  if (_localizacao == null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Marque no mapa ou capture pelo GPS para o palestrante abrir direto no Waze ou Google Maps.',
+                      style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: _isSaving
+                            ? null
+                            : () => _selecionarLocalizacao(nomeAgendista),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: const Text('Marcar endereço no mapa (GPS)'),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      _localizacao!.displayAddress,
+                      style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'GPS: ${_localizacao!.coordinatesLabel}',
+                      style: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: OutlinedButton.icon(
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => _selecionarLocalizacao(nomeAgendista),
+                              icon: const Icon(Icons.edit_location_alt, size: 16),
+                              label: const Text('Alterar no mapa'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: tokens.primary,
+                                side: BorderSide(
+                                  color: tokens.primary.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              onPressed: () => showLocationNavigationSheet(
+                                context,
+                                location: _localizacao!,
+                                title: _empresaController.text.trim().isEmpty
+                                    ? widget.empresaNome
+                                    : _empresaController.text.trim(),
+                              ),
+                              icon: const Icon(Icons.directions, size: 16),
+                              label: const Text('Ir ao local'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -453,12 +592,6 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
                 onPressed: _isSaving
                     ? null
                     : () async {
@@ -505,6 +638,7 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                               ? Timestamp.fromDate(dataFinal)
                               : null,
                           'duracao_minutos': _duracaoMinutos,
+                          'localizacao': _localizacao?.toMap(),
                           if (_interacaoVinculada == null)
                             'data_registro': FieldValue.serverTimestamp(),
                         };
@@ -531,8 +665,9 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                                 .get();
                             for (final documento in agendadas.docs) {
                               if (documento.id ==
-                                  _interacaoVinculada?['doc_id'])
+                                  _interacaoVinculada?['doc_id']) {
                                 continue;
+                              }
                               final dados = documento.data();
                               final inicioExistente =
                                   (dados['data_evento'] as Timestamp?)
@@ -562,23 +697,28 @@ class _InteractionBottomSheetState extends State<InteractionBottomSheet> {
                           }
                           if (mounted) Navigator.pop(context);
                         } catch (e) {
-                          if (mounted)
+                          if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('Erro ao salvar: $e')),
                             );
+                          }
                         } finally {
                           if (mounted) setState(() => _isSaving = false);
                         }
                       },
                 child: _isSaving
-                    ? const CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Text(
                         'Registrar na Árvore',
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           color: Colors.white,
                         ),
                       ),

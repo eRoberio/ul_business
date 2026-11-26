@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
+
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
 
@@ -86,11 +89,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Criar Nova Conta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: Text(
+          'Criar Nova Conta',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: tokens.textPrimary,
+          ),
+        ),
         backgroundColor: Colors.transparent,
-        elevation: 0,
+        shape: const Border(),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -99,16 +111,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             constraints: const BoxConstraints(maxWidth: 420),
             padding: const EdgeInsets.all(32.0),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
+              color: tokens.surfaceElevated1,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                )
-              ],
+              border: Border.all(color: tokens.borderSubtle),
+              boxShadow: tokens.cardShadow,
             ),
             child: Form(
               key: _formKey,
@@ -116,18 +122,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.person_add_outlined, size: 48, color: Colors.blueAccent),
+                  const Center(
+                    child: ULBusinessLogo(size: 76, borderRadius: 18),
+                  ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Cadastro de Agendista',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Preencha seus dados para solicitar acesso',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
+                    style: TextStyle(color: tokens.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 28),
 

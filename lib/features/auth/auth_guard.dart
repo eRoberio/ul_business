@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/design_system_widgets.dart';
 import 'login_screen.dart';
 import 'pending_approval_screen.dart';
 import '../dashboard/main_shell.dart';
 
 class AuthGuard extends StatelessWidget {
-  const AuthGuard({Key? key}) : super(key: key);
+  const AuthGuard({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +17,7 @@ class AuthGuard extends StatelessWidget {
       builder: (context, authSnapshot) {
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: BrandLoadingView(message: 'Iniciando UL Business...'),
           );
         }
 
@@ -34,7 +35,7 @@ class AuthGuard extends StatelessWidget {
           builder: (context, userDocSnapshot) {
             if (userDocSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
+                body: BrandLoadingView(message: 'Carregando seu perfil...'),
               );
             }
 

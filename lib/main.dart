@@ -1,34 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_core/firebase_core.dart'; // Importe o Firebase
+import 'package:firebase_core/firebase_core.dart';
 
-import 'firebase_options.dart'; // Importe o arquivo gerado pelo FlutterFire
+import 'firebase_options.dart';
 import 'features/auth/auth_guard.dart';
 import 'core/theme/app_theme.dart';
-import 'features/dashboard/main_shell.dart';
+import 'core/theme/theme_provider.dart';
 
 void main() async {
-  // Garante que os widgets do Flutter estejam prontos antes do Firebase
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Inicializa o Firebase para a plataforma atual (Web, Android, iOS, etc)
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   runApp(const ProviderScope(child: ULBusinessApp()));
 }
 
-// ... resto do código ULBusinessApp se mantém igual
-
-class ULBusinessApp extends StatelessWidget {
-  const ULBusinessApp({Key? key}) : super(key: key);
+class ULBusinessApp extends ConsumerWidget {
+  const ULBusinessApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
     return MaterialApp(
       title: 'UL Business',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const AuthGuard(), // A porta de entrada agora é segura
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
+      home: const AuthGuard(),
     );
   }
 }

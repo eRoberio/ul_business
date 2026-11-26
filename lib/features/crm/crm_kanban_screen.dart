@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:ul_business/features/crm/contract_screen.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
+import 'widgets/event_location.dart';
 import 'widgets/interaction_bottom_sheet.dart';
+import 'widgets/location_navigation_sheet.dart';
 
 class CrmKanbanScreen extends StatefulWidget {
-  const CrmKanbanScreen({Key? key}) : super(key: key);
+  const CrmKanbanScreen({super.key});
 
   @override
   State<CrmKanbanScreen> createState() => _CrmKanbanScreenState();
@@ -14,11 +19,13 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
   String _filtroTexto = '';
   final TextEditingController _searchController = TextEditingController();
 
-  final List<String> _todasColunas = [
+  final List<String> _todasColunas = const [
     'Em Prospecção',
     'Aguardando',
     'Agendada',
     'Recusada',
+    'Acompanhamento',
+    'Finalizado',
   ];
 
   @override
@@ -29,43 +36,45 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) =>
-                  setState(() => _filtroTexto = value.toLowerCase().trim()),
-              decoration: InputDecoration(
-                hintText: 'Filtrar por empresa ou agendista...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                suffixIcon: _filtroTexto.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(
-                          Icons.clear,
-                          size: 18,
-                          color: Colors.white54,
-                        ),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _filtroTexto = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surface,
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 0,
-                  horizontal: 16,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'CRM',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                    color: tokens.textPrimary,
+                    letterSpacing: -0.4,
+                  ),
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _searchController,
+                  onChanged: (value) =>
+                      setState(() => _filtroTexto = value.toLowerCase().trim()),
+                  decoration: InputDecoration(
+                    hintText: 'Filtrar por empresa ou agendista...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _filtroTexto.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _filtroTexto = '');
+                            },
+                          )
+                        : null,
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
 
@@ -77,16 +86,13 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const BrandLoadingView(message: 'Carregando funil CRM...');
                 }
 
                 final docs = snapshot.data?.docs ?? [];
 
                 final Map<String, List<Map<String, dynamic>>> colunas = {
-                  'Em Prospecção': [],
-                  'Aguardando': [],
-                  'Agendada': [],
-                  'Recusada': [],
+                  for (final col in _todasColunas) col: [],
                 };
 
                 for (var doc in docs) {
@@ -111,35 +117,22 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
                   }
                 }
 
-                return ListView(
+                return ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  children: [
-                    _buildKanbanColumn(
-                      context,
-                      title: 'Em Prospecção',
-                      color: Colors.blueGrey,
-                      items: colunas['Em Prospecção']!,
-                    ),
-                    _buildKanbanColumn(
-                      context,
-                      title: 'Aguardando',
-                      color: Colors.amberAccent,
-                      items: colunas['Aguardando']!,
-                    ),
-                    _buildKanbanColumn(
-                      context,
-                      title: 'Agendada',
-                      color: Colors.greenAccent,
-                      items: colunas['Agendada']!,
-                    ),
-                    _buildKanbanColumn(
-                      context,
-                      title: 'Recusada',
-                      color: Colors.redAccent,
-                      items: colunas['Recusada']!,
-                    ),
-                  ],
+                  itemCount: _todasColunas.length,
+                  itemBuilder: (context, index) {
+                    final title = _todasColunas[index];
+                    return KanbanColumn(
+                      title: title,
+                      color: tokens.statusColor(title),
+                      items: colunas[title]!,
+                      todasColunas: _todasColunas,
+                      onOpenInteracao: _abrirInteracao,
+                      onMoveStatus: _moverStatus,
+                      onRemoveTag: _mostrarDialogoRemoverTag,
+                    );
+                  },
                 );
               },
             ),
@@ -151,163 +144,48 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
+            useSafeArea: true,
             backgroundColor: Colors.transparent,
+            constraints: const BoxConstraints(maxWidth: 640),
             builder: (context) => Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
-              child: const InteractionBottomSheet(
+              child: const CommercialAppointmentModal(
                 empresaNome: 'Nova Prospecção',
               ),
             ),
           );
         },
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        child: const Icon(Icons.add, color: Colors.white),
+        backgroundColor: tokens.primary,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
       ),
     );
   }
 
-  Widget _buildKanbanColumn(
-    BuildContext context, {
-    required String title,
-    required Color color,
-    required List<Map<String, dynamic>> items,
-  }) {
-    return DragTarget<Map<String, dynamic>>(
-      onWillAcceptWithDetails: (details) => details.data['status'] != title,
-      onAcceptWithDetails: (details) async {
-        final docId = details.data['doc_id'];
-        if (docId != null) {
-          if (title == 'Agendada') {
-            _abrirInteracao({...details.data, 'status': title});
-            return;
-          }
-          await FirebaseFirestore.instance
-              .collection('interacoes')
-              .doc(docId)
-              .update({'status': title});
-        }
-      },
-      builder: (context, candidateData, rejectedData) {
-        final isHovered = candidateData.isNotEmpty;
+  Future<void> _moverStatus(
+    Map<String, dynamic> item,
+    String novoStatus,
+  ) async {
+    final docId = item['doc_id'];
+    if (docId == null) return;
+    if (novoStatus == 'Agendada') {
+      _abrirInteracao({...item, 'status': novoStatus});
+      return;
+    }
 
-        return Container(
-          width: 290,
-          margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
-          decoration: BoxDecoration(
-            color: isHovered
-                ? color.withOpacity(0.15)
-                : Theme.of(context).colorScheme.surface.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isHovered ? color : Colors.white10,
-              width: isHovered ? 2.0 : 1.0,
-            ),
-          ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        items.length.toString(),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Colors.white10),
+    final tags = List<String>.from(item['tags'] ?? []);
+    final novaTag = '${novoStatus}_${DateTime.now().millisecondsSinceEpoch}';
+    if (!tags.contains(novaTag)) {
+      tags.add(novaTag);
+    }
 
-              Expanded(
-                child: items.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Arraste um cartão aqui',
-                          style: TextStyle(color: Colors.white24, fontSize: 12),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: items.length,
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          return Draggable<Map<String, dynamic>>(
-                            data: item,
-                            feedback: Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                width: 270,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blueAccent),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Colors.black54,
-                                      blurRadius: 10,
-                                    ),
-                                  ],
-                                ),
-                                child: Text(
-                                  item['empresa_nome'] ?? '',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            childWhenDragging: Opacity(
-                              opacity: 0.3,
-                              child: _buildCardContent(context, item, title),
-                            ),
-                            child: _buildCardContent(context, item, title),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    await FirebaseFirestore.instance.collection('interacoes').doc(docId).update({
+      'status': novoStatus,
+      'tags': tags,
+      'ultimo_status_nome': _getNomeCompletoStatus(novoStatus),
+    });
   }
 
   void _abrirInteracao(Map<String, dynamic> interacao) {
@@ -321,7 +199,7 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: InteractionBottomSheet(
+        child: CommercialAppointmentModal(
           empresaNome: '${interacao['empresa_nome'] ?? 'Cliente'}',
           interacaoInicial: interacao,
         ),
@@ -329,154 +207,476 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
     );
   }
 
-  Widget _buildCardContent(
+  String _getNomeCompletoStatus(String statusAbreviado) {
+    switch (statusAbreviado) {
+      case 'Acompanhamento':
+        return 'Palestra Realizada & Acompanhamento';
+      default:
+        return statusAbreviado;
+    }
+  }
+
+  void _mostrarDialogoRemoverTag(
     BuildContext context,
     Map<String, dynamic> item,
-    String currentColumnTitle,
+    dynamic docId,
+    String tagParaRemover,
   ) {
-    final docId = item['doc_id'];
-    final valor = item['valor'] ?? '0';
-    final timestamp = item['data_evento'] as Timestamp?;
-    final dataEventoStr = timestamp != null
-        ? '${timestamp.toDate().day}/${timestamp.toDate().month} às ${timestamp.toDate().hour.toString().padLeft(2, '0')}:${timestamp.toDate().minute.toString().padLeft(2, '0')}'
-        : null;
+    final tokens = context.tokens;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remover Tag'),
+        content: Text(
+          'Tem certeza que deseja remover a tag "${tagParaRemover.split('_').first}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              if (docId != null) {
+                final tags = List<String>.from(item['tags'] ?? []);
+                tags.removeWhere((tag) => tag == tagParaRemover);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      color: Theme.of(context).colorScheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.white.withOpacity(0.05)),
+                await FirebaseFirestore.instance
+                    .collection('interacoes')
+                    .doc(docId)
+                    .update({'tags': tags});
+              }
+            },
+            child: Text('Remover', style: TextStyle(color: tokens.danger)),
+          ),
+        ],
       ),
-      child: InkWell(
-        onTap: () => _abrirInteracao(item),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
+    );
+  }
+}
+
+class KanbanColumn extends StatelessWidget {
+  final String title;
+  final Color color;
+  final List<Map<String, dynamic>> items;
+  final List<String> todasColunas;
+  final void Function(Map<String, dynamic> interacao) onOpenInteracao;
+  final Future<void> Function(Map<String, dynamic> item, String novoStatus)
+  onMoveStatus;
+  final void Function(
+    BuildContext context,
+    Map<String, dynamic> item,
+    dynamic docId,
+    String tagParaRemover,
+  )
+  onRemoveTag;
+
+  const KanbanColumn({
+    super.key,
+    required this.title,
+    required this.color,
+    required this.items,
+    required this.todasColunas,
+    required this.onOpenInteracao,
+    required this.onMoveStatus,
+    required this.onRemoveTag,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final columnBg = tokens.isDark
+        ? tokens.surfaceElevated1
+        : tokens.surfaceElevated2;
+
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) => details.data['status'] != title,
+      onAcceptWithDetails: (details) => onMoveStatus(details.data, title),
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+
+        return Container(
+          width: 300,
+          margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
+          decoration: BoxDecoration(
+            color: isHovered ? color.withValues(alpha: 0.08) : columnBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isHovered ? color : tokens.borderSubtle,
+              width: isHovered ? 1.5 : 1.0,
+            ),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      item['empresa_nome'] ?? 'Empresa Sem Nome',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Opções',
-                    icon: const Icon(
-                      Icons.more_vert,
-                      size: 18,
-                      color: Colors.white54,
-                    ),
-                    onSelected: (novoStatus) async {
-                      if (docId != null) {
-                        if (novoStatus == 'Agendada') {
-                          _abrirInteracao({...item, 'status': novoStatus});
-                          return;
-                        }
-                        await FirebaseFirestore.instance
-                            .collection('interacoes')
-                            .doc(docId)
-                            .update({'status': novoStatus});
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      ..._todasColunas
-                          .where((col) => col != currentColumnTitle)
-                          .map((colunaDestino) {
-                            return PopupMenuItem<String>(
-                              value: colunaDestino,
-                              child: Text(
-                                'Mover para $colunaDestino',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            );
-                          })
-                          .toList(),
-                      const PopupMenuDivider(),
-                      PopupMenuItem<String>(
-                        onTap: () async {
-                          if (docId != null) {
-                            await FirebaseFirestore.instance
-                                .collection('interacoes')
-                                .doc(docId)
-                                .delete();
-                          }
-                        },
-                        child: const Text(
-                          'Excluir',
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 12,
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                item['agendista'] ?? 'Agendista',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (dataEventoStr != null) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.event,
-                      size: 12,
-                      color: Colors.greenAccent,
+                        const SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: tokens.textPrimary,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$dataEventoStr (${item['duracao_minutos'] ?? 60} min)',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.greenAccent,
-                        fontWeight: FontWeight.bold,
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 24),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: tokens.isDark
+                            ? tokens.surfaceElevated2
+                            : tokens.surfaceElevated1,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: tokens.borderSubtle),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        items.length.toString(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.textSecondary,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-              if (valor != '0' && valor.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'R\$ $valor',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white70,
+              ),
+              Divider(height: 1, color: tokens.borderSubtle),
+
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Arraste um cartão aqui',
+                          style: TextStyle(
+                            color: tokens.textSecondary.withValues(alpha: 0.65),
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(10.0),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Draggable<Map<String, dynamic>>(
+                            data: item,
+                            feedback: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                width: 280,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: tokens.surfaceElevated1,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: tokens.primary,
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.25,
+                                      ),
+                                      blurRadius: 16,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  item['empresa_nome'] ?? '',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            childWhenDragging: Opacity(
+                              opacity: 0.35,
+                              child: DealCard(
+                                item: item,
+                                currentColumnTitle: title,
+                                todasColunas: todasColunas,
+                                onTap: () => onOpenInteracao(item),
+                                onMoveStatus: (novo) =>
+                                    onMoveStatus(item, novo),
+                                onRemoveTag: (tag) => onRemoveTag(
+                                  context,
+                                  item,
+                                  item['doc_id'],
+                                  tag,
+                                ),
+                              ),
+                            ),
+                            child: DealCard(
+                              item: item,
+                              currentColumnTitle: title,
+                              todasColunas: todasColunas,
+                              onTap: () => onOpenInteracao(item),
+                              onMoveStatus: (novo) => onMoveStatus(item, novo),
+                              onRemoveTag: (tag) => onRemoveTag(
+                                context,
+                                item,
+                                item['doc_id'],
+                                tag,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class DealCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final String currentColumnTitle;
+  final List<String> todasColunas;
+  final VoidCallback onTap;
+  final ValueChanged<String> onMoveStatus;
+  final ValueChanged<String> onRemoveTag;
+
+  const DealCard({
+    super.key,
+    required this.item,
+    required this.currentColumnTitle,
+    required this.todasColunas,
+    required this.onTap,
+    required this.onMoveStatus,
+    required this.onRemoveTag,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final docId = item['doc_id'];
+    final rawValor = '${item['valor'] ?? '0'}'
+        .replaceAll('R\$', '')
+        .replaceAll('.', '')
+        .replaceAll(',', '.')
+        .trim();
+    final valorNum = double.tryParse(rawValor) ?? 0.0;
+    final localizacao = EventLocation.fromMap(item['localizacao']);
+    final timestamp = item['data_evento'] as Timestamp?;
+    final dataEventoStr = timestamp != null
+        ? '${timestamp.toDate().day.toString().padLeft(2, '0')}/${timestamp.toDate().month.toString().padLeft(2, '0')} • ${timestamp.toDate().hour.toString().padLeft(2, '0')}:${timestamp.toDate().minute.toString().padLeft(2, '0')} (${item['duracao_minutos'] ?? 60}m)'
+        : null;
+
+    // Agrupa tags por status para evitar poluição visual com tags duplicadas
+    final rawTags = (item['tags'] as List<dynamic>?) ?? const [];
+    final Map<String, ({String rawTag, int count})> groupedTags = {};
+    for (final tag in rawTags) {
+      final tagStr = tag.toString();
+      final statusName = tagStr.split('_').first;
+      final existing = groupedTags[statusName];
+      groupedTags[statusName] = (
+        rawTag: tagStr,
+        count: (existing?.count ?? 0) + 1,
+      );
+    }
+
+    return CustomCard(
+      margin: const EdgeInsets.only(bottom: 10.0),
+      padding: const EdgeInsets.all(14.0),
+      backgroundColor: tokens.isDark
+          ? tokens.surfaceElevated2
+          : tokens.surfaceElevated1,
+      borderRadius: 10,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item['empresa_nome'] ?? 'Empresa Sem Nome',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: tokens.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Opções',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 18,
+                  color: tokens.textSecondary,
+                ),
+                onSelected: onMoveStatus,
+                itemBuilder: (context) => [
+                  ...todasColunas
+                      .where((col) => col != currentColumnTitle)
+                      .map((colunaDestino) {
+                        return PopupMenuItem<String>(
+                          value: colunaDestino,
+                          child: Text(
+                            'Mover para $colunaDestino',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    onTap: () async {
+                      if (docId != null) {
+                        await FirebaseFirestore.instance
+                            .collection('interacoes')
+                            .doc(docId)
+                            .delete();
+                      }
+                    },
+                    child: Text(
+                      'Excluir',
+                      style: TextStyle(color: tokens.danger, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item['agendista'] ?? 'Agendista',
+            style: TextStyle(
+              fontSize: 12,
+              color: tokens.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (dataEventoStr != null) ...[
+            const SizedBox(height: 8),
+            StatusBadge(
+              label: dataEventoStr,
+              color: tokens.success,
+              icon: Icons.event_outlined,
+            ),
+          ],
+          if (valorNum > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              formatBrlCurrency(valorNum),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: tokens.textPrimary,
+              ),
+            ),
+          ],
+          if ('${item['notas'] ?? ''}'.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${item['notas']}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+            ),
+          ],
+          if (localizacao != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.location_on, size: 13, color: tokens.primary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    localizacao.displayAddress,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: tokens.primary),
                   ),
                 ),
               ],
-              if ('${item['notas'] ?? ''}'.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${item['notas']}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            LocationActionButtons(
+              location: localizacao,
+              empresaNome: '${item['empresa_nome'] ?? 'Empresa'}',
+              compact: true,
+            ),
+          ],
+          if (groupedTags.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: groupedTags.entries.take(3).map((entry) {
+                final label = entry.value.count > 1
+                    ? '${entry.key} ×${entry.value.count}'
+                    : entry.key;
+                return StatusBadge(
+                  label: label,
+                  color: tokens.statusColor(entry.key),
+                  onLongPress: () => onRemoveTag(entry.value.rawTag),
+                );
+              }).toList(),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Divider(height: 1, color: tokens.borderSubtle),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 36,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ContractScreen(interacao: item),
+                  ),
+                );
+              },
+              icon: Icon(Icons.draw_outlined, size: 15, color: tokens.primary),
+              label: Text(
+                'Gerar Contrato',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.primary,
                 ),
-              ],
-            ],
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: tokens.borderSubtle),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

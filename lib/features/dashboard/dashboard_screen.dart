@@ -1,27 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
+
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('interacoes').snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const BrandLoadingView(message: 'Carregando indicadores...');
           }
 
           final docs = snapshot.data?.docs ?? [];
 
-          // Processamento e cálculo de métricas reais
           int palestrasFechadas = 0;
           int totalInteracoes = docs.length;
           double faturamentoTotal = 0.0;
-          List<Map<String, dynamic>> aprovacoesPendentes = [];
-          Map<String, int> contagemTemas = {};
+          final List<Map<String, dynamic>> aprovacoesPendentes = [];
+          final Map<String, int> contagemTemas = {};
 
           for (var doc in docs) {
             final data = doc.data() as Map<String, dynamic>;
@@ -40,20 +44,16 @@ class DashboardScreen extends StatelessWidget {
             if (status == 'Agendada') {
               palestrasFechadas++;
               faturamentoTotal += valor;
-
-              // Contagem para ranking de temas
               contagemTemas[tema] = (contagemTemas[tema] ?? 0) + 1;
             } else if (status == 'Aguardando') {
               aprovacoesPendentes.add(data);
             }
           }
 
-          // Cálculo da taxa de conversão real
-          int taxaConversao = totalInteracoes > 0
+          final taxaConversao = totalInteracoes > 0
               ? ((palestrasFechadas / totalInteracoes) * 100).round()
               : 0;
 
-          // Ordenação dos temas mais vendidos
           final temasOrdenados = contagemTemas.entries.toList()
             ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -62,15 +62,21 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Torre de Controle',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                    color: tokens.textPrimary,
+                    letterSpacing: -0.4,
+                  ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   'Visão Geral do Desempenho Comercial',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: tokens.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -84,21 +90,19 @@ class DashboardScreen extends StatelessWidget {
                       spacing: 16.0,
                       runSpacing: 16.0,
                       children: [
-                        _buildKpiCard(
-                          context,
+                        KpiCard(
                           width: isWide
                               ? (constraints.maxWidth - 32) / 3
                               : constraints.maxWidth,
                           title: 'Faturamento Estimado',
-                          value: 'R\$ ${faturamentoTotal.toStringAsFixed(0)}',
+                          value: formatBrlCurrency(faturamentoTotal),
                           trend: palestrasFechadas > 0
-                              ? '$palestrasFechadas contratos fechados'
+                              ? '+$palestrasFechadas contratos fechados'
                               : 'Nenhum contrato fechado',
                           icon: Icons.attach_money,
-                          color: Colors.greenAccent,
+                          color: tokens.success,
                         ),
-                        _buildKpiCard(
-                          context,
+                        KpiCard(
                           width: isWide
                               ? (constraints.maxWidth - 32) / 3
                               : constraints.maxWidth,
@@ -106,10 +110,9 @@ class DashboardScreen extends StatelessWidget {
                           value: palestrasFechadas.toString().padLeft(2, '0'),
                           trend: 'Status: Agendada',
                           icon: Icons.event_available,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: tokens.primary,
                         ),
-                        _buildKpiCard(
-                          context,
+                        KpiCard(
                           width: isWide
                               ? (constraints.maxWidth - 32) / 3
                               : constraints.maxWidth,
@@ -117,7 +120,7 @@ class DashboardScreen extends StatelessWidget {
                           value: '$taxaConversao%',
                           trend: '$totalInteracoes abordagens registradas',
                           icon: Icons.pie_chart_outline,
-                          color: Colors.amberAccent,
+                          color: tokens.warning,
                         ),
                       ],
                     );
@@ -137,20 +140,40 @@ class DashboardScreen extends StatelessWidget {
                         // Temas de Maior Tração
                         Expanded(
                           flex: isDesktop ? 2 : 0,
-                          child: _buildSectionContainer(
-                            context,
-                            title: 'Temas de Maior Tração',
-                            child: temasOrdenados.isEmpty
-                                ? _buildEmptyState(
+                          child: CustomCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Temas de Maior Tração',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                if (temasOrdenados.isEmpty)
+                                  const EmptyStateBox(
                                     icon: Icons.bar_chart_rounded,
-                                    message: 'Nenhum tema com agendamento confirmado ainda.',
+                                    message:
+                                        'Nenhum tema com agendamento confirmado ainda.',
                                   )
-                                : Column(
+                                else
+                                  Column(
                                     children: temasOrdenados.take(4).map((
                                       entry,
                                     ) {
+                                      final totalAgendamentos =
+                                          palestrasFechadas > 0
+                                          ? palestrasFechadas
+                                          : 1;
                                       final maxVal = temasOrdenados.first.value;
-                                      final percentage = entry.value / maxVal;
+                                      final barFraction = entry.value / maxVal;
+                                      final sharePercent =
+                                          ((entry.value / totalAgendamentos) *
+                                                  100)
+                                              .round();
                                       return Padding(
                                         padding: const EdgeInsets.only(
                                           bottom: 16.0,
@@ -158,16 +181,16 @@ class DashboardScreen extends StatelessWidget {
                                         child: _buildBarChartRow(
                                           context,
                                           label: entry.key,
-                                          percentage: percentage,
+                                          barFraction: barFraction,
+                                          sharePercent: sharePercent,
                                           value:
                                               '${entry.value} ${entry.value == 1 ? 'agenda' : 'agendas'}',
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
                                         ),
                                       );
                                     }).toList(),
                                   ),
+                              ],
+                            ),
                           ),
                         ),
 
@@ -179,15 +202,28 @@ class DashboardScreen extends StatelessWidget {
                         // Aprovações Pendentes
                         Expanded(
                           flex: isDesktop ? 1 : 0,
-                          child: _buildSectionContainer(
-                            context,
-                            title: 'Aprovações Pendentes',
-                            child: aprovacoesPendentes.isEmpty
-                                ? _buildEmptyState(
-                                    icon: Icons.check_circle_outline,
-                                    message: 'Não há propostas aguardando aprovação no momento.',
+                          child: CustomCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Aprovações Pendentes',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                if (aprovacoesPendentes.isEmpty)
+                                  const EmptyStateBox(
+                                    icon: Icons.check_circle_outline_rounded,
+                                    title: 'Tudo em dia',
+                                    message:
+                                        'Não há propostas aguardando aprovação no momento.',
                                   )
-                                : Column(
+                                else
+                                  Column(
                                     children: aprovacoesPendentes.map((item) {
                                       return _buildApprovalItem(
                                         context,
@@ -199,6 +235,8 @@ class DashboardScreen extends StatelessWidget {
                                       );
                                     }).toList(),
                                   ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -213,167 +251,76 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildKpiCard(
+  Widget _buildBarChartRow(
     BuildContext context, {
-    required double width,
-    required String title,
+    required String label,
+    required double barFraction,
+    required int sharePercent,
     required String value,
-    required String trend,
-    required IconData icon,
-    required Color color,
   }) {
-    return Container(
-      width: width,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
+    final tokens = context.tokens;
+
+    return Tooltip(
+      message: '$label: $value ($sharePercent% das palestras confirmadas)',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+              const SizedBox(width: 8),
+              Text(
+                '$value • $sharePercent%',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: tokens.textSecondary,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: Icon(icon, color: color, size: 18),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            trend,
-            style: TextStyle(
-              color: color.withOpacity(0.8),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionContainer(
-    BuildContext context, {
-    required String title,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const SizedBox(height: 20),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState({required IconData icon, required String message}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 16.0),
-      width: double.infinity,
-      child: Column(
-        children: [
-          Icon(icon, size: 40, color: Colors.white24),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBarChartRow(
-    BuildContext context, {
-    required String label,
-    required double percentage,
-    required String value,
-    required Color color,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 12, color: Colors.white54),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Stack(
-          children: [
-            Container(
-              height: 6,
-              decoration: BoxDecoration(
-                color: Colors.white10,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            FractionallySizedBox(
-              widthFactor: percentage.clamp(0.05, 1.0),
-              child: Container(
-                height: 6,
+          const SizedBox(height: 8),
+          Stack(
+            children: [
+              Container(
+                height: 8,
                 decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(3),
+                  color: tokens.surfaceElevated2,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: tokens.borderSubtle, width: 0.5),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
+              FractionallySizedBox(
+                widthFactor: barFraction.clamp(0.05, 1.0),
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        tokens.primary,
+                        tokens.followUp,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -383,13 +330,15 @@ class DashboardScreen extends StatelessWidget {
     required String empresa,
     required String notas,
   }) {
+    final tokens = context.tokens;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12.0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.02),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white10),
+        color: tokens.surfaceElevated2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -400,9 +349,10 @@ class DashboardScreen extends StatelessWidget {
               children: [
                 Text(
                   empresa,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
+                    color: tokens.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -410,17 +360,17 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'Por: $agendista',
-                  style: const TextStyle(
-                    color: Colors.amberAccent,
+                  style: TextStyle(
+                    color: tokens.warning,
                     fontSize: 11,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 if (notas.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     notas,
-                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: tokens.textSecondary, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -428,10 +378,18 @@ class DashboardScreen extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.hourglass_top_rounded,
-            color: Colors.amberAccent,
-            size: 20,
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: tokens.badgeBackground(tokens.warning),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.hourglass_top_rounded,
+              color: tokens.warning,
+              size: 16,
+            ),
           ),
         ],
       ),

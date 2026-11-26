@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/design_system_widgets.dart';
+import '../crm/widgets/event_location.dart';
 import '../crm/widgets/interaction_bottom_sheet.dart';
+import '../crm/widgets/location_navigation_sheet.dart';
 
 class AgendaScreen extends StatefulWidget {
   const AgendaScreen({super.key});
@@ -16,21 +20,28 @@ class _AgendaScreenState extends State<AgendaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Agenda de Palestras',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: tokens.textPrimary,
+              ),
             ),
             Text(
               '${_getNombreMes(_mesAtual.month)} de ${_mesAtual.year}',
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
+                color: tokens.primary,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -39,13 +50,12 @@ class _AgendaScreenState extends State<AgendaScreen> {
           preferredSize: const Size.fromHeight(44),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            // Alternador Mês / Semana
             child: Container(
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: tokens.surfaceElevated2,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -73,7 +83,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const BrandLoadingView(message: 'Carregando agenda...');
           }
           if (snapshot.hasError) {
             return const Center(
@@ -114,9 +124,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.chevron_left,
-                        color: Colors.white70,
+                        color: tokens.textSecondary,
                       ),
                       onPressed: () {
                         setState(() {
@@ -130,15 +140,16 @@ class _AgendaScreenState extends State<AgendaScreen> {
                     ),
                     Text(
                       '${_getNombreMes(_mesAtual.month)} de ${_mesAtual.year}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
                         fontSize: 16,
+                        color: tokens.textPrimary,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.chevron_right,
-                        color: Colors.white70,
+                        color: tokens.textSecondary,
                       ),
                       onPressed: () {
                         setState(() {
@@ -217,22 +228,21 @@ class _AgendaScreenState extends State<AgendaScreen> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final tokens = context.tokens;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
+          color: isSelected ? tokens.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : Colors.white54,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            color: isSelected ? Colors.white : tokens.textSecondary,
           ),
         ),
       ),
@@ -244,10 +254,10 @@ class _AgendaScreenState extends State<AgendaScreen> {
     BuildContext context,
     Map<String, List<Map<String, dynamic>>> eventosPorDia,
   ) {
+    final tokens = context.tokens;
     final primeiroDiaDoMes = DateTime(_mesAtual.year, _mesAtual.month, 1);
     final ultimoDiaDoMes = DateTime(_mesAtual.year, _mesAtual.month + 1, 0);
 
-    // Ajusta offset para a semana começar no Domingo (weekday: 7 vira 0)
     final diaInicioSemana = primeiroDiaDoMes.weekday == 7
         ? 0
         : primeiroDiaDoMes.weekday;
@@ -255,17 +265,25 @@ class _AgendaScreenState extends State<AgendaScreen> {
 
     return GridView.builder(
       shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(), // Evita conflito com o SingleChildScrollView
+      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 7,
         mainAxisExtent: MediaQuery.textScalerOf(context).scale(300),
-        crossAxisSpacing: 6,
-        mainAxisSpacing: 6,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
       ),
       itemCount: totalDiasExibicao,
       itemBuilder: (context, index) {
         if (index < diaInicioSemana) {
-          return Container(); // Células vazias no início do mês
+          return Container(
+            decoration: BoxDecoration(
+              color: tokens.surfaceElevated2.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: tokens.borderSubtle.withValues(alpha: 0.5),
+              ),
+            ),
+          );
         }
 
         final diaNumero = index - diaInicioSemana + 1;
@@ -284,20 +302,21 @@ class _AgendaScreenState extends State<AgendaScreen> {
         return GestureDetector(
           onTap: () => _exibirDetalhesDoDia(context, dataDia, eventosDoDia),
           child: Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: isHoje
-                  ? Theme.of(context).colorScheme.primary
-                        .withValues(alpha: 0.15)
-                  : Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
+                  ? tokens.badgeBackground(tokens.primary)
+                  : tokens.surfaceElevated1,
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: isHoje
-                    ? Theme.of(context).colorScheme.primary
+                    ? tokens.primary
                     : isSabado
-                    ? Colors.amberAccent.withValues(alpha: 0.3)
-                    : Colors.white.withValues(alpha: 0.05),
+                    ? tokens.warning.withValues(alpha: 0.4)
+                    : tokens.borderSubtle,
+                width: isHoje ? 1.5 : 1.0,
               ),
+              boxShadow: tokens.cardShadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,34 +324,60 @@ class _AgendaScreenState extends State<AgendaScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '$diaNumero',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: isHoje
-                            ? Theme.of(context).colorScheme.primary
-                            : isSabado
-                            ? Colors.amberAccent
-                            : Colors.white70,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$diaNumero',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: isHoje
+                                ? tokens.primary
+                                : isSabado
+                                ? tokens.warning
+                                : tokens.textPrimary,
+                          ),
+                        ),
+                        if (isSabado) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: tokens.badgeBackground(tokens.warning),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '>18:30',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: tokens.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     if (eventosDoDia.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
+                          horizontal: 6,
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.greenAccent.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(4),
+                          color: tokens.badgeBackground(tokens.success),
+                          borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           '${eventosDoDia.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: Colors.greenAccent,
-                            fontWeight: FontWeight.bold,
+                            color: tokens.success,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -452,11 +497,13 @@ class _AgendaScreenState extends State<AgendaScreen> {
         maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         maxWidth: 640,
       ),
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: context.tokens.surfaceElevated1,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
+        final tokens = context.tokens;
+
         return Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -469,20 +516,21 @@ class _AgendaScreenState extends State<AgendaScreen> {
                   Expanded(
                     child: Text(
                       'Agenda de ${dataDia.day} de ${_getNombreMes(dataDia.month)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: Icon(Icons.close, color: tokens.textSecondary),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white10),
-              const SizedBox(height: 8),
+              Divider(color: tokens.borderSubtle),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -501,14 +549,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
               const SizedBox(height: 12),
 
               if (eventos.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24.0),
-                  child: Center(
-                    child: Text(
-                      'Não há compromissos agendados para este dia.',
-                      style: TextStyle(color: Colors.white38, fontSize: 13),
-                    ),
-                  ),
+                const EmptyStateBox(
+                  icon: Icons.event_available_outlined,
+                  message: 'Não há compromissos agendados para este dia.',
                 )
               else
                 Flexible(
@@ -517,21 +560,19 @@ class _AgendaScreenState extends State<AgendaScreen> {
                     itemCount: eventos.length,
                     itemBuilder: (context, index) {
                       final ev = eventos[index];
+                      final localizacao = EventLocation.fromMap(
+                        ev['localizacao'],
+                      );
                       final timestamp = ev['data_evento'] as Timestamp?;
                       final hora = timestamp != null
                           ? '${timestamp.toDate().hour.toString().padLeft(2, '0')}:${timestamp.toDate().minute.toString().padLeft(2, '0')}'
                           : 'A definir';
 
-                      return Container(
+                      return CustomCard(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.03),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Colors.greenAccent.withValues(alpha: 0.3),
-                          ),
-                        ),
+                        backgroundColor: tokens.surfaceElevated2,
+                        borderColor: tokens.success.withValues(alpha: 0.35),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -541,39 +582,27 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                 Expanded(
                                   child: Text(
                                     ev['empresa_nome'] ?? 'Cliente',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
                                       fontSize: 15,
+                                      color: tokens.textPrimary,
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.greenAccent.withValues(
-                                      alpha: 0.2,
-                                    ),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    hora,
-                                    style: const TextStyle(
-                                      color: Colors.greenAccent,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
+                                StatusBadge(
+                                  label: hora,
+                                  color: tokens.success,
                                 ),
                               ],
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Duração: ${ev['duracao_minutos'] ?? 60} minutos',
-                              style: const TextStyle(fontSize: 12),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tokens.textSecondary,
+                              ),
                             ),
                             Text(
                               'Agendista: ${ev['agendista'] ?? 'Não informado'}',
@@ -604,6 +633,51 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                 ),
                               ),
                             ],
+                            if (localizacao != null) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.lightBlueAccent
+                                      .withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.lightBlueAccent
+                                        .withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          size: 15,
+                                          color: Colors.lightBlueAccent,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            localizacao.displayAddress,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    LocationActionButtons(
+                                      location: localizacao,
+                                      empresaNome:
+                                          '${ev['empresa_nome'] ?? 'Cliente'}',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             if (ev['doc_id'] != null)
                               TextButton.icon(
                                 icon: const Icon(Icons.edit_outlined, size: 18),
@@ -631,6 +705,8 @@ class _AgendaScreenState extends State<AgendaScreen> {
     DateTime dia,
     Map<String, dynamic> evento,
   ) {
+    final tokens = context.tokens;
+    final localizacao = EventLocation.fromMap(evento['localizacao']);
     final data = (evento['data_evento'] as Timestamp?)?.toDate();
     final hora = data == null
         ? 'A definir'
@@ -638,11 +714,11 @@ class _AgendaScreenState extends State<AgendaScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Material(
-        color: Colors.greenAccent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(4),
+        color: tokens.badgeBackground(tokens.success),
+        borderRadius: BorderRadius.circular(6),
         child: InkWell(
           onTap: () => _exibirDetalhesDoDia(context, dia, [evento]),
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(6),
           child: Padding(
             padding: const EdgeInsets.all(6),
             child: Column(
@@ -650,40 +726,63 @@ class _AgendaScreenState extends State<AgendaScreen> {
               children: [
                 Text(
                   hora,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: Colors.greenAccent,
-                    fontWeight: FontWeight.bold,
+                    color: tokens.success,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
                   '${evento['empresa_nome'] ?? 'Cliente'}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
+                    color: tokens.textPrimary,
                   ),
                 ),
                 Text(
                   'Agendista: ${evento['agendista'] ?? 'Não informado'}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11),
+                  style: TextStyle(fontSize: 11, color: tokens.textSecondary),
                 ),
                 if (evento['valor'] != null && '${evento['valor']}' != '0')
                   Text(
                     'R\$ ${evento['valor']}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
+                    style: TextStyle(fontSize: 11, color: tokens.textPrimary),
                   ),
                 if ('${evento['notas'] ?? ''}'.isNotEmpty)
                   Text(
                     '${evento['notas']}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
+                    style: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                  ),
+                if (localizacao != null)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        size: 11,
+                        color: tokens.primary,
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Text(
+                          localizacao.displayAddress,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: tokens.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
               ],
             ),
