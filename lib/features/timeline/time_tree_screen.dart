@@ -3,11 +3,28 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/design_system_widgets.dart';
+import '../../domain/entities/audit_log.dart';
 import '../crm/widgets/event_location.dart';
 import '../crm/widgets/location_navigation_sheet.dart';
 
-class TimeTreeScreen extends StatelessWidget {
+class TimeTreeScreen extends StatefulWidget {
   const TimeTreeScreen({super.key});
+
+  @override
+  State<TimeTreeScreen> createState() => _TimeTreeScreenState();
+}
+
+class _TimeTreeScreenState extends State<TimeTreeScreen> {
+  bool _showAuditLogs = false;
+  final ScrollController _interactionsScrollController = ScrollController();
+  final ScrollController _auditScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _interactionsScrollController.dispose();
+    _auditScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +44,9 @@ class TimeTreeScreen extends StatelessWidget {
               ),
             ),
             Text(
-              'Histórico de Interações (TimeTree)',
+              _showAuditLogs
+                  ? 'Logs Imutáveis de Auditoria (audit_logs)'
+                  : 'Histórico de Interações (TimeTree)',
               style: TextStyle(
                 fontSize: 12,
                 color: tokens.textSecondary,
@@ -36,34 +55,212 @@ class TimeTreeScreen extends StatelessWidget {
             ),
           ],
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Negociações', style: TextStyle(fontSize: 12)),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text('Auditoria', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+              selected: {_showAuditLogs},
+              onSelectionChanged: (selection) {
+                setState(() => _showAuditLogs = selection.first);
+              },
+            ),
+          ),
+        ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('interacoes')
-            .orderBy('data_registro', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const BrandLoadingView(message: 'Carregando histórico...');
-          }
+      body: _showAuditLogs
+          ? _buildAuditLogsList(context)
+          : _buildInteractionsList(context),
+    );
+  }
 
-          final docs = snapshot.data?.docs ?? [];
+  Widget _buildAuditLogsList(BuildContext context) {
+    final tokens = context.tokens;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('audit_logs')
+          .orderBy('timestamp', descending: true)
+          .limit(100)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const BrandLoadingView(message: 'Carregando logs de auditoria...');
+        }
 
-          if (docs.isEmpty) {
-            return const Center(
-              child: EmptyStateBox(
-                icon: Icons.account_tree_outlined,
-                title: 'Nenhum registro na árvore',
-                message:
-                    'As prospecções e agendamentos aparecerão aqui em ordem cronológica.',
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return const Center(
+            child: EmptyStateBox(
+              icon: Icons.security_outlined,
+              title: 'Nenhum evento de auditoria',
+              message:
+                  'Ações críticas (bloqueios de login, movimentações no CRM, agendamentos e contratos) serão registradas aqui.',
+            ),
+          );
+        }
+
+        return ListView.builder(
+          key: const PageStorageKey('timeline_audit_scroll'),
+          controller: _auditScrollController,
+          padding: const EdgeInsets.all(20.0),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            final action = AuditActionType.fromCode('${data['action'] ?? ''}');
+            final actorName = '${data['actor_name'] ?? 'Sistema'}';
+            final targetName = '${data['target_name'] ?? ''}';
+            final details = '${data['details'] ?? ''}';
+            final ts = data['timestamp'] as Timestamp?;
+            final dt = ts?.toDate();
+            final dataFormatada = dt != null
+                ? '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+                : 'Recente';
+
+            final Color color;
+            final IconData icon;
+            switch (action) {
+              case AuditActionType.loginBlocked:
+                color = tokens.danger;
+                icon = Icons.gpp_bad_outlined;
+              case AuditActionType.contractGenerated:
+                color = tokens.success;
+                icon = Icons.verified_outlined;
+              case AuditActionType.eventScheduled:
+                color = tokens.success;
+                icon = Icons.event_available_outlined;
+              case AuditActionType.cardDeleted:
+                color = tokens.danger;
+                icon = Icons.delete_outline;
+              case AuditActionType.cardMoved:
+                color = tokens.warning;
+                icon = Icons.swap_horiz_rounded;
+              case AuditActionType.cardCreated:
+              case AuditActionType.cardUpdated:
+                color = tokens.primary;
+                icon = Icons.edit_note_rounded;
+            }
+
+            return CustomCard(
+              margin: const EdgeInsets.only(bottom: 12.0),
+              padding: const EdgeInsets.all(14.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: tokens.badgeBackground(color),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                action.label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: tokens.textPrimary,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              dataFormatada,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: tokens.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (targetName.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            targetName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.primary,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          details,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: tokens.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Responsável: $actorName',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: tokens.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
-          }
+          },
+        );
+      },
+    );
+  }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(20.0),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
+  Widget _buildInteractionsList(BuildContext context) {
+    final tokens = context.tokens;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('interacoes')
+          .orderBy('data_registro', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const BrandLoadingView(message: 'Carregando histórico...');
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const Center(
+            child: EmptyStateBox(
+              icon: Icons.account_tree_outlined,
+              title: 'Nenhum registro na árvore',
+              message:
+                  'As prospecções e agendamentos aparecerão aqui em ordem cronológica.',
+            ),
+          );
+        }
+
+        return ListView.builder(
+          key: const PageStorageKey('timeline_interactions_scroll'),
+          controller: _interactionsScrollController,
+          padding: const EdgeInsets.all(20.0),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
               final empresa = data['empresa_nome'] ?? 'Empresa Sem Nome';
               final status = data['status'] ?? 'Em Prospecção';
@@ -249,7 +446,6 @@ class TimeTreeScreen extends StatelessWidget {
             },
           );
         },
-      ),
-    );
+      );
   }
 }

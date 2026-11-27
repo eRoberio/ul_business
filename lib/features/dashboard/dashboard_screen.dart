@@ -58,6 +58,7 @@ class DashboardScreen extends StatelessWidget {
             ..sort((a, b) => b.value.compareTo(a.value));
 
           return SingleChildScrollView(
+            key: const PageStorageKey('dashboard_scroll'),
             padding: const EdgeInsets.all(24.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,6 +244,9 @@ class DashboardScreen extends StatelessWidget {
                     );
                   },
                 ),
+
+                const SizedBox(height: 24),
+                const InstitutionalPartnersStrip(),
               ],
             ),
           );

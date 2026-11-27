@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:ul_business/features/crm/contract_screen.dart';
 
+import '../../core/feedback/feedback_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/design_system_widgets.dart';
+import '../../data/providers/repository_providers.dart';
 import 'widgets/event_location.dart';
 import 'widgets/interaction_bottom_sheet.dart';
 import 'widgets/location_navigation_sheet.dart';
 
-class CrmKanbanScreen extends StatefulWidget {
+class CrmKanbanScreen extends ConsumerStatefulWidget {
   const CrmKanbanScreen({super.key});
 
   @override
-  State<CrmKanbanScreen> createState() => _CrmKanbanScreenState();
+  ConsumerState<CrmKanbanScreen> createState() => _CrmKanbanScreenState();
 }
 
-class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
+class _CrmKanbanScreenState extends ConsumerState<CrmKanbanScreen> {
   String _filtroTexto = '';
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _horizontalScrollController = ScrollController();
 
   final List<String> _todasColunas = const [
     'Em Prospecção',
@@ -31,6 +36,7 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalScrollController.dispose();
     super.dispose();
   }
 
@@ -117,22 +123,30 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
                   }
                 }
 
-                return ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  itemCount: _todasColunas.length,
-                  itemBuilder: (context, index) {
-                    final title = _todasColunas[index];
-                    return KanbanColumn(
-                      title: title,
-                      color: tokens.statusColor(title),
-                      items: colunas[title]!,
-                      todasColunas: _todasColunas,
-                      onOpenInteracao: _abrirInteracao,
-                      onMoveStatus: _moverStatus,
-                      onRemoveTag: _mostrarDialogoRemoverTag,
-                    );
-                  },
+                return Scrollbar(
+                  controller: _horizontalScrollController,
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    key: const PageStorageKey('crm_kanban_horizontal'),
+                    controller: _horizontalScrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const ClampingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    itemCount: _todasColunas.length,
+                    itemBuilder: (context, index) {
+                      final title = _todasColunas[index];
+                      return KanbanColumn(
+                        title: title,
+                        color: tokens.statusColor(title),
+                        items: colunas[title]!,
+                        todasColunas: _todasColunas,
+                        onOpenInteracao: _abrirInteracao,
+                        onMoveStatus: _moverStatus,
+                        onRemoveTag: _mostrarDialogoRemoverTag,
+                        onDeleteCard: _excluirCard,
+                      );
+                    },
+                  ),
                 );
               },
             ),
@@ -175,17 +189,47 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
       return;
     }
 
-    final tags = List<String>.from(item['tags'] ?? []);
-    final novaTag = '${novoStatus}_${DateTime.now().millisecondsSinceEpoch}';
-    if (!tags.contains(novaTag)) {
-      tags.add(novaTag);
-    }
+    final user = FirebaseAuth.instance.currentUser;
+    final actorName =
+        user?.displayName ?? user?.email?.split('@').first ?? 'Agendista';
 
-    await FirebaseFirestore.instance.collection('interacoes').doc(docId).update({
-      'status': novoStatus,
-      'tags': tags,
-      'ultimo_status_nome': _getNomeCompletoStatus(novoStatus),
-    });
+    try {
+      await ref.read(crmRepositoryProvider).moveStatus(
+        item: item,
+        newStatus: novoStatus,
+        newStatusFullName: _getNomeCompletoStatus(novoStatus),
+        actorUid: user?.uid ?? '',
+        actorName: actorName,
+      );
+      ref.read(feedbackProvider.notifier).showSuccess(
+        'Card movido para "$novoStatus".',
+      );
+    } catch (e) {
+      ref.read(feedbackProvider.notifier).showError(
+        'Não foi possível mover o card: $e',
+      );
+    }
+  }
+
+  Future<void> _excluirCard(Map<String, dynamic> item) async {
+    final docId = item['doc_id'] as String?;
+    if (docId == null) return;
+    final user = FirebaseAuth.instance.currentUser;
+    final actorName =
+        user?.displayName ?? user?.email?.split('@').first ?? 'Agendista';
+    try {
+      await ref.read(crmRepositoryProvider).deleteInteraction(
+        docId: docId,
+        empresaNome: '${item['empresa_nome'] ?? 'Cliente'}',
+        actorUid: user?.uid ?? '',
+        actorName: actorName,
+      );
+      ref.read(feedbackProvider.notifier).showSuccess('Card removido do CRM.');
+    } catch (e) {
+      ref.read(feedbackProvider.notifier).showError(
+        'Sem permissão ou erro ao excluir: $e',
+      );
+    }
   }
 
   void _abrirInteracao(Map<String, dynamic> interacao) {
@@ -256,7 +300,7 @@ class _CrmKanbanScreenState extends State<CrmKanbanScreen> {
   }
 }
 
-class KanbanColumn extends StatelessWidget {
+class KanbanColumn extends StatefulWidget {
   final String title;
   final Color color;
   final List<Map<String, dynamic>> items;
@@ -271,6 +315,7 @@ class KanbanColumn extends StatelessWidget {
     String tagParaRemover,
   )
   onRemoveTag;
+  final Future<void> Function(Map<String, dynamic> item) onDeleteCard;
 
   const KanbanColumn({
     super.key,
@@ -281,7 +326,21 @@ class KanbanColumn extends StatelessWidget {
     required this.onOpenInteracao,
     required this.onMoveStatus,
     required this.onRemoveTag,
+    required this.onDeleteCard,
   });
+
+  @override
+  State<KanbanColumn> createState() => _KanbanColumnState();
+}
+
+class _KanbanColumnState extends State<KanbanColumn> {
+  final ScrollController _verticalController = ScrollController();
+
+  @override
+  void dispose() {
+    _verticalController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -291,8 +350,10 @@ class KanbanColumn extends StatelessWidget {
         : tokens.surfaceElevated2;
 
     return DragTarget<Map<String, dynamic>>(
-      onWillAcceptWithDetails: (details) => details.data['status'] != title,
-      onAcceptWithDetails: (details) => onMoveStatus(details.data, title),
+      onWillAcceptWithDetails: (details) =>
+          details.data['status'] != widget.title,
+      onAcceptWithDetails: (details) =>
+          widget.onMoveStatus(details.data, widget.title),
       builder: (context, candidateData, rejectedData) {
         final isHovered = candidateData.isNotEmpty;
 
@@ -300,10 +361,10 @@ class KanbanColumn extends StatelessWidget {
           width: 300,
           margin: const EdgeInsets.only(right: 16.0, bottom: 16.0),
           decoration: BoxDecoration(
-            color: isHovered ? color.withValues(alpha: 0.08) : columnBg,
+            color: isHovered ? widget.color.withValues(alpha: 0.08) : columnBg,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isHovered ? color : tokens.borderSubtle,
+              color: isHovered ? widget.color : tokens.borderSubtle,
               width: isHovered ? 1.5 : 1.0,
             ),
           ),
@@ -323,13 +384,13 @@ class KanbanColumn extends StatelessWidget {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: color,
+                            color: widget.color,
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          title,
+                          widget.title,
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
@@ -353,7 +414,7 @@ class KanbanColumn extends StatelessWidget {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        items.length.toString(),
+                        widget.items.length.toString(),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -367,7 +428,7 @@ class KanbanColumn extends StatelessWidget {
               Divider(height: 1, color: tokens.borderSubtle),
 
               Expanded(
-                child: items.isEmpty
+                child: widget.items.isEmpty
                     ? Center(
                         child: Text(
                           'Arraste um cartão aqui',
@@ -378,10 +439,13 @@ class KanbanColumn extends StatelessWidget {
                         ),
                       )
                     : ListView.builder(
+                        key: PageStorageKey('kanban_col_${widget.title}'),
+                        controller: _verticalController,
+                        physics: const ClampingScrollPhysics(),
                         padding: const EdgeInsets.all(10.0),
-                        itemCount: items.length,
+                        itemCount: widget.items.length,
                         itemBuilder: (context, index) {
-                          final item = items[index];
+                          final item = widget.items[index];
                           return Draggable<Map<String, dynamic>>(
                             data: item,
                             feedback: Material(
@@ -418,12 +482,13 @@ class KanbanColumn extends StatelessWidget {
                               opacity: 0.35,
                               child: DealCard(
                                 item: item,
-                                currentColumnTitle: title,
-                                todasColunas: todasColunas,
-                                onTap: () => onOpenInteracao(item),
+                                currentColumnTitle: widget.title,
+                                todasColunas: widget.todasColunas,
+                                onTap: () => widget.onOpenInteracao(item),
                                 onMoveStatus: (novo) =>
-                                    onMoveStatus(item, novo),
-                                onRemoveTag: (tag) => onRemoveTag(
+                                    widget.onMoveStatus(item, novo),
+                                onDeleteCard: () => widget.onDeleteCard(item),
+                                onRemoveTag: (tag) => widget.onRemoveTag(
                                   context,
                                   item,
                                   item['doc_id'],
@@ -433,11 +498,13 @@ class KanbanColumn extends StatelessWidget {
                             ),
                             child: DealCard(
                               item: item,
-                              currentColumnTitle: title,
-                              todasColunas: todasColunas,
-                              onTap: () => onOpenInteracao(item),
-                              onMoveStatus: (novo) => onMoveStatus(item, novo),
-                              onRemoveTag: (tag) => onRemoveTag(
+                              currentColumnTitle: widget.title,
+                              todasColunas: widget.todasColunas,
+                              onTap: () => widget.onOpenInteracao(item),
+                              onMoveStatus: (novo) =>
+                                  widget.onMoveStatus(item, novo),
+                              onDeleteCard: () => widget.onDeleteCard(item),
+                              onRemoveTag: (tag) => widget.onRemoveTag(
                                 context,
                                 item,
                                 item['doc_id'],
@@ -463,6 +530,7 @@ class DealCard extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<String> onMoveStatus;
   final ValueChanged<String> onRemoveTag;
+  final VoidCallback onDeleteCard;
 
   const DealCard({
     super.key,
@@ -472,6 +540,7 @@ class DealCard extends StatelessWidget {
     required this.onTap,
     required this.onMoveStatus,
     required this.onRemoveTag,
+    required this.onDeleteCard,
   });
 
   @override
@@ -552,12 +621,9 @@ class DealCard extends StatelessWidget {
                       }),
                   const PopupMenuDivider(),
                   PopupMenuItem<String>(
-                    onTap: () async {
+                    onTap: () {
                       if (docId != null) {
-                        await FirebaseFirestore.instance
-                            .collection('interacoes')
-                            .doc(docId)
-                            .delete();
+                        onDeleteCard();
                       }
                     },
                     child: Text(

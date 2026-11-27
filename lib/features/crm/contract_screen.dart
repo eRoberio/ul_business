@@ -4,9 +4,12 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 import 'package:signature/signature.dart';
 
+import '../../core/feedback/feedback_service.dart';
+import '../../domain/entities/audit_log.dart';
 import 'cnpj_service.dart';
 import 'contract_document.dart';
 
@@ -149,8 +152,12 @@ class _ContractScreenState extends State<ContractScreen> {
     super.dispose();
   }
 
-  void _message(String text) {
-    if (mounted) {
+  void _message(String text, {FeedbackType type = FeedbackType.info}) {
+    if (!mounted) return;
+    try {
+      final container = ProviderScope.containerOf(context, listen: false);
+      container.read(feedbackProvider.notifier).show(text, type: type);
+    } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
     }
   }
@@ -370,6 +377,18 @@ class _ContractScreenState extends State<ContractScreen> {
           'contrato_assinado_em': FieldValue.serverTimestamp(),
         });
       });
+      await firestore.collection('audit_logs').add({
+        'action': AuditActionType.contractGenerated.code,
+        'action_label': AuditActionType.contractGenerated.label,
+        'actor_uid': user.uid,
+        'actor_name': user.displayName ?? user.email ?? 'Agendista',
+        'target_id': contract.id,
+        'target_name': data['razao_social'] ?? 'Contrato',
+        'details':
+            'Contrato ${contract.id} gerado e assinado para ${data['razao_social'] ?? ''}.',
+        'metadata': {'interaction_id': interactionId},
+        'timestamp': FieldValue.serverTimestamp(),
+      });
       if (!mounted) return;
       setState(() {
         _signed = true;
@@ -378,6 +397,7 @@ class _ContractScreenState extends State<ContractScreen> {
       });
       _message(
         'Contrato assinado e salvo. A cópia está disponível para compartilhar.',
+        type: FeedbackType.success,
       );
     } catch (error) {
       _message('Contrato não salvo: $error');

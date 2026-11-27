@@ -399,3 +399,103 @@ class _BrandLoadingViewState extends State<BrandLoadingView>
     );
   }
 }
+
+class InstitutionalPartnersStrip extends StatelessWidget {
+  final bool compact;
+
+  const InstitutionalPartnersStrip({
+    super.key,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 14 : 20,
+        vertical: compact ? 10 : 14,
+      ),
+      decoration: BoxDecoration(
+        color: tokens.surfaceElevated2.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const ULBusinessLogo(size: 22, borderRadius: 6),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'União Leste Brasileira (ULB)',
+                  style: TextStyle(
+                    fontSize: compact ? 11 : 12,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textPrimary,
+                    letterSpacing: 0.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: const [
+              _PartnerBadgeSlot(label: 'ULB Institucional', icon: Icons.verified_outlined),
+              _PartnerBadgeSlot(label: 'Parceiro Corporativo', icon: Icons.handshake_outlined),
+              _PartnerBadgeSlot(label: 'Rede Educacional', icon: Icons.school_outlined),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PartnerBadgeSlot extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const _PartnerBadgeSlot({
+    required this.label,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tokens.surfaceElevated1,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: tokens.primary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: tokens.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

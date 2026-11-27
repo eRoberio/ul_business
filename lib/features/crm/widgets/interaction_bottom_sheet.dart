@@ -1,15 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../core/draft/draft_storage_service.dart';
+import '../../../core/feedback/feedback_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../data/providers/repository_providers.dart';
+import '../../../domain/entities/schedule_validator.dart';
 import 'event_location.dart';
 import 'location_navigation_sheet.dart';
 import 'location_picker_screen.dart';
 
 typedef InteractionBottomSheet = CommercialAppointmentModal;
 
-class CommercialAppointmentModal extends StatefulWidget {
+class CommercialAppointmentModal extends ConsumerStatefulWidget {
   final String empresaNome;
   final DateTime? dataInicial;
   final Map<String, dynamic>? interacaoInicial;
@@ -24,12 +31,12 @@ class CommercialAppointmentModal extends StatefulWidget {
   });
 
   @override
-  State<CommercialAppointmentModal> createState() =>
+  ConsumerState<CommercialAppointmentModal> createState() =>
       _CommercialAppointmentModalState();
 }
 
 class _CommercialAppointmentModalState
-    extends State<CommercialAppointmentModal> {
+    extends ConsumerState<CommercialAppointmentModal> {
   String _statusSelecionado = 'Em Prospecção';
   final TextEditingController _empresaController = TextEditingController();
   final TextEditingController _notasController = TextEditingController();
@@ -38,9 +45,14 @@ class _CommercialAppointmentModalState
   DateTime? _dataEvento;
   TimeOfDay? _horarioEvento;
   bool _isSaving = false;
+  bool _draftRestored = false;
   int _duracaoMinutos = 60;
   Map<String, dynamic>? _interacaoVinculada;
   EventLocation? _localizacao;
+  Timer? _draftDebounce;
+
+  String get _draftKey =>
+      'commercial_appointment_${widget.interacaoInicial?['doc_id'] ?? 'new'}';
 
   static const List<Map<String, dynamic>> _statusOptions = [
     {'label': 'Em Prospecção', 'icon': Icons.search},
@@ -60,6 +72,60 @@ class _CommercialAppointmentModalState
     if (widget.interacaoInicial != null) {
       _preencherInteracao(widget.interacaoInicial!);
     }
+    _empresaController.addListener(_scheduleDraftSave);
+    _notasController.addListener(_scheduleDraftSave);
+    _valorController.addListener(_scheduleDraftSave);
+    _restoreDraft();
+  }
+
+  Future<void> _restoreDraft() async {
+    final draft = await ref.read(draftStorageProvider).loadDraft(_draftKey);
+    if (!mounted || draft == null) return;
+
+    setState(() {
+      final empresa = draft['empresa_nome'] as String?;
+      final notas = draft['notas'] as String?;
+      final valor = draft['valor'] as String?;
+      final status = draft['status'] as String?;
+      final duracao = draft['duracao_minutos'] as int?;
+      final dataIso = draft['data_evento_iso'] as String?;
+      final horaMin = draft['horario_minutos'] as int?;
+      final locMap = draft['localizacao'];
+
+      if (empresa != null && empresa.isNotEmpty) {
+        _empresaController.text = empresa;
+      }
+      if (notas != null) _notasController.text = notas;
+      if (valor != null) _valorController.text = valor;
+      if (status != null && status.isNotEmpty) _statusSelecionado = status;
+      if (duracao != null && duracao > 0) _duracaoMinutos = duracao;
+      if (dataIso != null) _dataEvento = DateTime.tryParse(dataIso);
+      if (horaMin != null) {
+        _horarioEvento = TimeOfDay(hour: horaMin ~/ 60, minute: horaMin % 60);
+      }
+      if (locMap is Map<String, dynamic>) {
+        _localizacao = EventLocation.fromMap(locMap);
+      }
+      _draftRestored = true;
+    });
+  }
+
+  void _scheduleDraftSave() {
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(const Duration(milliseconds: 250), () {
+      ref.read(draftStorageProvider).saveDraft(_draftKey, {
+        'empresa_nome': _empresaController.text,
+        'notas': _notasController.text,
+        'valor': _valorController.text,
+        'status': _statusSelecionado,
+        'duracao_minutos': _duracaoMinutos,
+        'data_evento_iso': _dataEvento?.toIso8601String(),
+        'horario_minutos': _horarioEvento == null
+            ? null
+            : (_horarioEvento!.hour * 60 + _horarioEvento!.minute),
+        'localizacao': _localizacao?.toMap(),
+      });
+    });
   }
 
   void _preencherInteracao(Map<String, dynamic> interacao) {
@@ -88,11 +154,13 @@ class _CommercialAppointmentModalState
     );
     if (selecionada != null && mounted) {
       setState(() => _localizacao = selecionada);
+      _scheduleDraftSave();
     }
   }
 
   @override
   void dispose() {
+    _draftDebounce?.cancel();
     _empresaController.dispose();
     _notasController.dispose();
     _valorController.dispose();
@@ -122,6 +190,7 @@ class _CommercialAppointmentModalState
           _dataEvento = pickedDate;
           _horarioEvento = pickedTime;
         });
+        _scheduleDraftSave();
       }
     }
   }
@@ -129,12 +198,8 @@ class _CommercialAppointmentModalState
   bool _validarRegraSabado() {
     if (_statusSelecionado == 'Agendada') {
       if (_dataEvento == null || _horarioEvento == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Selecione a data e o horário para agendar o evento.',
-            ),
-          ),
+        ref.read(feedbackProvider.notifier).showWarning(
+          'Selecione a data e o horário para agendar o evento.',
         );
         return false;
       }
@@ -224,6 +289,44 @@ class _CommercialAppointmentModalState
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (_draftRestored) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: tokens.badgeBackground(tokens.primary),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.restore, size: 14, color: tokens.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Rascunho automático restaurado.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.primary,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(draftStorageProvider).clearDraft(_draftKey);
+                        if (mounted) setState(() => _draftRestored = false);
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Limpar', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
 
             if (widget.permitirVinculo)
@@ -339,7 +442,10 @@ class _CommercialAppointmentModalState
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: () => setState(() => _statusSelecionado = label),
+                    onTap: () {
+                      setState(() => _statusSelecionado = label);
+                      _scheduleDraftSave();
+                    },
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
                       decoration: BoxDecoration(
@@ -450,8 +556,10 @@ class _CommercialAppointmentModalState
                 decoration: const InputDecoration(
                   labelText: 'Duração (minutos)',
                 ),
-                onChanged: (value) =>
-                    _duracaoMinutos = int.tryParse(value) ?? 0,
+                onChanged: (value) {
+                  _duracaoMinutos = int.tryParse(value) ?? 0;
+                  _scheduleDraftSave();
+                },
               ),
               const SizedBox(height: 16),
             ],
@@ -597,10 +705,8 @@ class _CommercialAppointmentModalState
                     : () async {
                         final empresaValida = _empresaController.text.trim();
                         if (empresaValida.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Informe o nome da empresa.'),
-                            ),
+                          ref.read(feedbackProvider.notifier).showWarning(
+                            'Informe o nome da empresa.',
                           );
                           return;
                         }
@@ -644,64 +750,30 @@ class _CommercialAppointmentModalState
                         };
 
                         try {
-                          final colecao = FirebaseFirestore.instance.collection(
-                            'interacoes',
+                          await ref.read(crmRepositoryProvider).saveInteraction(
+                            existingId:
+                                _interacaoVinculada?['doc_id'] as String?,
+                            payload: apontamento,
+                            actorUid: currentUser?.uid ?? '',
+                            actorName: nomeAgendista,
+                            previousStatus:
+                                _interacaoVinculada?['status'] as String?,
                           );
-                          if (_statusSelecionado == 'Agendada') {
-                            if (_duracaoMinutos <= 0 ||
-                                _duracaoMinutos > 1440) {
-                              throw StateError(
-                                'Informe uma duração entre 1 e 1440 minutos.',
-                              );
-                            }
-                            if (dataFinal!.isBefore(DateTime.now())) {
-                              throw StateError('Escolha um horário futuro.');
-                            }
-                            final fim = dataFinal.add(
-                              Duration(minutes: _duracaoMinutos),
-                            );
-                            final agendadas = await colecao
-                                .where('status', isEqualTo: 'Agendada')
-                                .get();
-                            for (final documento in agendadas.docs) {
-                              if (documento.id ==
-                                  _interacaoVinculada?['doc_id']) {
-                                continue;
-                              }
-                              final dados = documento.data();
-                              final inicioExistente =
-                                  (dados['data_evento'] as Timestamp?)
-                                      ?.toDate();
-                              if (inicioExistente == null) continue;
-                              final fimExistente = inicioExistente.add(
-                                Duration(
-                                  minutes:
-                                      (dados['duracao_minutos'] as num?)
-                                          ?.toInt() ??
-                                      60,
-                                ),
-                              );
-                              if (dataFinal.isBefore(fimExistente) &&
-                                  inicioExistente.isBefore(fim)) {
-                                throw StateError(
-                                  'Horário ocupado por ${dados['empresa_nome'] ?? 'outro compromisso'}. Escolha outro horário.',
-                                );
-                              }
-                            }
-                          }
-                          final id = _interacaoVinculada?['doc_id'] as String?;
-                          if (id == null) {
-                            await colecao.add(apontamento);
-                          } else {
-                            await colecao.doc(id).update(apontamento);
-                          }
+                          await ref
+                              .read(draftStorageProvider)
+                              .clearDraft(_draftKey);
+                          ref.read(feedbackProvider.notifier).showSuccess(
+                            'Apontamento de "$empresaValida" salvo com sucesso.',
+                          );
                           if (mounted) Navigator.pop(context);
+                        } on ScheduleValidationException catch (e) {
+                          ref.read(feedbackProvider.notifier).showWarning(
+                            e.message,
+                          );
                         } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Erro ao salvar: $e')),
-                            );
-                          }
+                          ref.read(feedbackProvider.notifier).showError(
+                            'Erro ao salvar: $e',
+                          );
                         } finally {
                           if (mounted) setState(() => _isSaving = false);
                         }

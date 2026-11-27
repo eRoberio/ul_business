@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userDocExists() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return userDocExists() && currentUserData().role != 'pendente';
+    }
+
+    function isOrador() {
+      return userDocExists() && currentUserData().role == 'orador';
+    }
+
+    function isValidInteractionPayload(data) {
+      return data.keys().hasAll([
+          'empresa_nome',
+          'status',
+          'agendista',
+          'agendista_uid',
+          'duracao_minutos'
+        ]) &&
+        data.empresa_nome is string &&
+        data.empresa_nome.size() >= 1 &&
+        data.empresa_nome.size() <= 200 &&
+        data.status in [
+          'Em Prospecção',
+          'Aguardando',
+          'Agendada',
+          'Recusada',
+          'Acompanhamento',
+          'Finalizado'
+        ] &&
+        data.agendista is string &&
+        data.agendista_uid is string &&
+        data.duracao_minutos is int &&
+        data.duracao_minutos >= 1 &&
+        data.duracao_minutos <= 1440 &&
+        (
+          data.status != 'Agendada' ||
+          (data.data_evento is timestamp && data.data_evento > request.time)
+        );
+    }
+
+    // Usuários e papéis (roles)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isOrador());
+
+      // Usuário só pode criar seu próprio documento inicial como 'pendente'
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == userId &&
+        request.resource.data.role == 'pendente';
+
+      // Apenas Orador altera roles; usuário comum só atualiza seus próprios metadados sem elevar privilégio
+      allow update: if isOrador() || (
+        isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.uid == resource.data.uid
+      );
+
+      allow delete: if isOrador();
+    }
+
+    // Cards e Agendamentos do CRM
+    match /interacoes/{interacaoId} {
+      allow read: if isActiveUser();
+
+      allow create: if isActiveUser() &&
+        request.resource.data.agendista_uid == request.auth.uid &&
+        request.resource.data.data_registro == request.time &&
+        isValidInteractionPayload(request.resource.data);
+
+      // Bloqueia edição de cards de outros agendistas (exceto Orador/Admin)
+      // e impede alteração retroativa do dono original (agendista_uid)
+      allow update: if isActiveUser() &&
+        (resource.data.agendista_uid == request.auth.uid || isOrador()) &&
+        request.resource.data.agendista_uid == resource.data.agendista_uid &&
+        isValidInteractionPayload(request.resource.data);
+
+      allow delete: if isActiveUser() &&
+        (resource.data.agendista_uid == request.auth.uid || isOrador());
+
+      // Subcoleção de Contratos Assinados (imutáveis após criação)
+      match /contratos/{contratoId} {
+        allow read: if isActiveUser();
+        allow create: if isActiveUser() &&
+          request.resource.data.registrado_por_uid == request.auth.uid &&
+          request.resource.data.aceite == true &&
+          request.resource.data.registrado_em == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // Logs de Auditoria Imutáveis (audit_logs)
+    match /audit_logs/{logId} {
+      allow read: if isActiveUser();
+
+      // Permite criação apenas com timestamp do servidor e schema rígido:
+      // - eventos autenticados exigem actor_uid == request.auth.uid
+      // - evento de login bloqueado (pré-auth) só é aceito com action == 'login_blocked'
+      allow create: if request.resource.data.keys().hasAll([
+          'action',
+          'action_label',
+          'actor_uid',
+          'actor_name',
+          'target_id',
+          'target_name',
+          'details',
+          'timestamp'
+        ]) &&
+        request.resource.data.timestamp == request.time &&
+        request.resource.data.action is string &&
+        request.resource.data.details is string &&
+        request.resource.data.details.size() <= 500 &&
+        (
+          (isAuthenticated() && request.resource.data.actor_uid == request.auth.uid) ||
+          (!isAuthenticated() &&
+            request.resource.data.action == 'login_blocked' &&
+            request.resource.data.actor_uid == 'anonymous')
+        );
+
+      // Impede qualquer alteração ou exclusão retroativa de logs
+      allow update, delete: if false;
+    }
+  }
+}

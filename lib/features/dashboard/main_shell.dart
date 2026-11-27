@@ -21,6 +21,7 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell> {
   int _selectedIndex = 0;
+  final PageStorageBucket _pageStorageBucket = PageStorageBucket();
 
   final List<Widget> _pages = const [
     DashboardScreen(),
@@ -184,7 +185,10 @@ class _MainShellState extends ConsumerState<MainShell> {
           const SizedBox(width: 16),
         ],
       ),
-      body: isDesktop ? _buildDesktopLayout(tokens) : _buildMobileLayout(),
+      body: PageStorage(
+        bucket: _pageStorageBucket,
+        child: isDesktop ? _buildDesktopLayout(tokens) : _buildMobileLayout(),
+      ),
       bottomNavigationBar: isDesktop ? null : _buildBottomNavBar(tokens),
     );
   }
@@ -238,12 +242,20 @@ class _MainShellState extends ConsumerState<MainShell> {
           ],
         ),
         VerticalDivider(thickness: 1, width: 1, color: tokens.borderSubtle),
-        Expanded(child: _pages[_selectedIndex]),
+        Expanded(
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: _pages,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildMobileLayout() => _pages[_selectedIndex];
+  Widget _buildMobileLayout() => IndexedStack(
+    index: _selectedIndex,
+    children: _pages,
+  );
 
   Widget _buildBottomNavBar(AppThemeTokens tokens) {
     return Container(
